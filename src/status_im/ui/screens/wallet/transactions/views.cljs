@@ -52,8 +52,8 @@
    [button/secondary-button {:on-press #(on-delete-transaction transaction)}
     (i18n/label :t/delete)]])
 
-(defn- inbound? [type] (= "inbound" type))
-(defn- unsigned? [type] (= "unsigned" type))
+(defn- inbound? [type] (= :inbound type))
+(defn- unsigned? [type] (= :unsigned type))
 
 (defn- transaction-icon [k background-color color]
   {:icon      k
@@ -146,17 +146,16 @@
     [list/item-primary label]
     [list/item-secondary symbol]]])
 
-(defn- item-filter-type [{:keys [id label checked?]}]
-  (let [kid (keyword id)]
-    [item-filter {:icon (transaction-type->icon kid) :checked? checked? :path {:type kid}}
-     [list/item-content
-      [list/item-primary-only label]]]))
+(defn- render-item-filter [{:keys [id label checked?]}]
+  [item-filter {:icon (transaction-type->icon id) :checked? checked? :path {:type id}}
+   [list/item-content
+    [list/item-primary-only label]]])
 
 (defn- wrap-filter-data [m]
   ;; TODO(jeluard) Restore tokens filtering once token support is added
   [{:title      (i18n/label :t/transactions-filter-type)
     :key        :type
-    :renderItem (list/wrap-render-fn item-filter-type)
+    :render-fn  render-item-filter ;(list/wrap-render-fn item-filter-type)
     :data       (:type m)}])
 
 (defview filter-history []
@@ -208,7 +207,10 @@
 
 (defn- pretty-print-asset [symbol amount]
   (case symbol
-    "ETH" (if amount (money/wei->str :eth amount) "...")))
+    ;; TODO (jeluard) Format tokens amount once tokens history is supported
+    :ETH (if amount (money/wei->str :eth amount) "...")
+    (throw (str "Unknown asset symbol: " symbol))))
+
 
 (defn details-header [{:keys [value date type symbol]}]
   [react/view {:style transactions.styles/details-header}
@@ -267,8 +269,8 @@
 
 (defview transaction-details []
   (letsubs [{:keys [hash url type] :as transaction} [:wallet.transactions/transaction-details]
-            confirmations                            [:wallet.transactions.details/confirmations]
-            confirmations-progress                   [:wallet.transactions.details/confirmations-progress]]
+            confirmations                           [:wallet.transactions.details/confirmations]
+            confirmations-progress                  [:wallet.transactions.details/confirmations-progress]]
     [react/view {:style styles/flex}
      [status-bar/status-bar]
      [toolbar/toolbar {}
