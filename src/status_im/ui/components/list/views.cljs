@@ -5,8 +5,8 @@
   (defn render [{:keys [title subtitle]}]
     [item
      [item-icon {:icon :dots_vertical_white}]
-     [item-content 
-      [item-primary title] 
+     [item-content
+      [item-primary title]
       [item-secondary subtitle]]
      [item-icon {:icon :arrow_right_gray}]])
 
@@ -53,10 +53,10 @@
    [vector-icons/icon icon (merge icon-opts {:style styles/item-icon})]])
 
 (defn item-image
-  [{:keys[source style]}]
+  [{:keys[source style image-style]}]
   [react/view {:style style}
    [react/image {:source source
-                 :style  styles/item-image}]])
+                 :style  (merge styles/item-image image-style)}]])
 
 (defn item-primary
   [primary]
@@ -72,7 +72,7 @@
 
 (defn item-content
   [& children]
-  (into [react/view {:style styles/item-text-view}] (keep identity children)))
+  (into [react/view {:style styles/item-content-view}] (keep identity children)))
 
 (defn item-checkbox
   [{:keys [style] :as props}]
@@ -96,7 +96,7 @@
   (let [separator (or separator (when (and platform/ios? default-separator?) default-separator))]
     (merge {:keyExtractor (fn [_ i] i)}
            (when render-fn               {:renderItem (wrap-render-fn render-fn)})
-           (when separator               {:ItemSeparatorComponent (fn [] (reagent/as-element [separator]))})
+           (when separator               {:ItemSeparatorComponent (fn [] (reagent/as-element separator))})
            (when empty-component         {:ListEmptyComponent (fn [] (reagent/as-element empty-component))})
            (when header                  {:ListHeaderComponent (fn [] (reagent/as-element header))}))))
 
@@ -125,7 +125,7 @@
 (defn flat-list
   "A wrapper for FlatList.
    See https://facebook.github.io/react-native/docs/flatlist.html"
-  [{:keys [data empty-component] :as props}]
+  [{:keys [data] :as props}]
   {:pre [(or (nil? data)
              (sequential? data))]}
   [flat-list-class
@@ -152,14 +152,11 @@
 (defn section-list
   "A wrapper for SectionList.
    See https://facebook.github.io/react-native/docs/sectionlist.html"
-  [{:keys [sections empty-component render-section-header-fn] :as props
+  [{:keys [sections render-section-header-fn] :as props
     :or {render-section-header-fn default-render-section-header}}]
-  (if (and (every? #(empty? (:data %)) sections) empty-component)
-    empty-component
-    [section-list-class
-     (merge (base-list-props props)
-            props
-            {:sections            (clj->js (map wrap-per-section-render-fn sections))
-             :renderSectionHeader (wrap-render-section-header-fn render-section-header-fn)}
-            (when platform/ios? {:SectionSeparatorComponent (fn [] (reagent/as-element [section-separator]))}))]))
-
+  [section-list-class
+   (merge (base-list-props props)
+          props
+          {:sections            (clj->js (map wrap-per-section-render-fn sections))
+           :renderSectionHeader (wrap-render-section-header-fn render-section-header-fn)}
+          (when platform/ios? {:SectionSeparatorComponent (fn [] (reagent/as-element section-separator))}))])

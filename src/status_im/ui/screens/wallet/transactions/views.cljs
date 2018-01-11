@@ -52,8 +52,8 @@
    [button/secondary-button {:on-press #(on-delete-transaction transaction)}
     (i18n/label :t/delete)]])
 
-(defn- inbound? [type] (= "inbound" type))
-(defn- unsigned? [type] (= "unsigned" type))
+(defn- inbound? [type] (= :inbound type))
+(defn- unsigned? [type] (= :unsigned type))
 
 (defn- transaction-icon [k background-color color]
   {:icon      k
@@ -207,7 +207,10 @@
 
 (defn- pretty-print-asset [symbol amount]
   (case symbol
-    "ETH" (if amount (money/wei->str :eth amount) "...")))
+    ;; TODO (jeluard) Format tokens amount once tokens history is supported
+    :ETH (if amount (money/wei->str :eth amount) "...")
+    (throw (str "Unknown asset symbol: " symbol))))
+
 
 (defn details-header [{:keys [value date type symbol]}]
   [react/view {:style transactions.styles/details-header}
@@ -266,8 +269,8 @@
 
 (defview transaction-details []
   (letsubs [{:keys [hash url type] :as transaction} [:wallet.transactions/transaction-details]
-            confirmations                            [:wallet.transactions.details/confirmations]
-            confirmations-progress                   [:wallet.transactions.details/confirmations-progress]]
+            confirmations                           [:wallet.transactions.details/confirmations]
+            confirmations-progress                  [:wallet.transactions.details/confirmations-progress]]
     [react/view {:style styles/flex}
      [status-bar/status-bar]
      [toolbar/toolbar {}
