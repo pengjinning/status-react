@@ -37,7 +37,7 @@ install_cocoapods
 echo && setup_header "Installing dependencies..."
 
 dependency_setup lein deps
-dependency_setup npm install
+dependency_setup cnpm install
 
 mapbox_path="$(repo_path)/node_modules/react-native-mapbox-gl/ios/Mapbox.framework"
 dependency_setup "ln -sf '$mapbox_path' '$(repo_path)/ios'"
