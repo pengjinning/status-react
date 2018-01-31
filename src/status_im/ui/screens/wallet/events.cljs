@@ -124,7 +124,7 @@
   :update-transactions-success
   (fn [db [_ transactions]]
     (-> db
-        (assoc-in [:wallet :transactions] transactions)
+        (update-in [:wallet :transactions] merge transactions)
         (assoc-in [:wallet :transactions-loading?] false))))
 
 (handlers/register-handler-db
@@ -205,9 +205,3 @@
                          :content             (i18n/label :t/transactions-delete-content)
                          :confirm-button-text (i18n/label :t/confirm)
                          :on-accept           #(re-frame/dispatch [:wallet/discard-unsigned-transaction transaction-id])}}))
-
-(handlers/register-handler-fx
-  :navigate-to-asset
-  (fn [{:keys [db]} [_ asset]]
-    {:db          (assoc db :wallet-selected-asset asset)
-     :dispatch    [:navigate-to :wallet-my-token]}))

@@ -8,7 +8,6 @@
 (def contacts               #js {})
 (def dialogs                #js {})
 (def dismiss-keyboard       #js {})
-(def drawer                 #js {})
 (def emoji-picker           #js {:default #js {}})
 (def fs                     #js {})
 (def http-bridge            #js {})
@@ -32,10 +31,15 @@
 (def realm                  #js {:schemaVersion (fn [])
                                  :close         (fn [])})
 (def sortable-listview      #js {})
-(def swiper                 #js {})
 (def vector-icons           #js {:default #js {}})
 (def webview-bridge         #js {:default #js {}})
 (def svg                    #js {:default #js {}})
 (def react-native-fcm       #js {:default #js {}})
+
+(def snoopy                  #js {:default #js {}})
+(def snoopy-filter           #js {:default #js {}})
+(def snoopy-bars             #js {:default #js {}})
+(def snoopy-buffer           #js {:default #js {}})
+(def EventEmmiter            #js {})
 
 

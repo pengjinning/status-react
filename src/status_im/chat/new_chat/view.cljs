@@ -10,7 +10,6 @@
             [status-im.ui.components.react :as react]
             [status-im.ui.components.status-bar.view :refer [status-bar]]
             [status-im.ui.components.toolbar.view :refer [toolbar-with-search]]
-            [status-im.ui.components.drawer.view :as drawer]
             [status-im.chat.new-chat.styles :as styles]
             [status-im.i18n :as i18n]))
 
@@ -29,11 +28,22 @@
    [action-button {:label     (i18n/label :t/add-new-contact)
                    :icon      :icons/add
                    :icon-opts {:color :blue}
-                   :on-press  #(dispatch [:navigate-to :new-contact])}]])
+                   :on-press  #(dispatch [:navigate-to :new-contact])}]
+   [action-separator]
+   [action-button {:label     (i18n/label :t/open-url)
+                   :icon      :icons/address
+                   :icon-opts {:color :blue}
+                   :on-press  #(do
+                                 (dispatch [:navigate-to-clean :home])
+                                 (dispatch [:navigate-to :browser]))}]])
 
-(defn contact-list-row [contact]
+(defn contact-list-row [{:keys [dapp-url] :as contact}]
   [contact-view {:contact  contact
-                 :on-press #(dispatch [:open-chat-with-contact %])}])
+                 :on-press #(if dapp-url
+                              (do
+                                (dispatch [:navigate-to-clean :home])
+                                (dispatch [:open-dapp-in-browser contact]))
+                              (dispatch [:open-chat-with-contact %]))}])
 
 (defview new-chat-toolbar []
   (letsubs [show-search [:get-in [:toolbar-search :show]]
@@ -58,16 +68,15 @@
 (defview new-chat []
   (letsubs [contacts [:all-added-group-contacts-filtered]
             params [:get :contacts/click-params]]
-    [drawer/drawer-view
-     [react/view styles/contacts-list-container
-      [new-chat-toolbar]
-      (when contacts
-        [list/flat-list {:style                     styles/contacts-list
-                         :data                      contacts
-                         :render-fn                 contact-list-row
-                         :bounces                   false
-                         :keyboardShouldPersistTaps :always
-                         :header                    (header contacts)
-                         :footer                    [react/view
-                                                     [common/list-footer]
-                                                     [common/bottom-shadow]]}])]]))
+    [react/view styles/contacts-list-container
+     [new-chat-toolbar]
+     (when contacts
+       [list/flat-list {:style                     styles/contacts-list
+                        :data                      contacts
+                        :render-fn                 contact-list-row
+                        :bounces                   false
+                        :keyboardShouldPersistTaps :always
+                        :header                    (header contacts)
+                        :footer                    [react/view
+                                                    [common/list-footer]
+                                                    [common/bottom-shadow]]}])]))

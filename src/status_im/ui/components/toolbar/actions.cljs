@@ -2,16 +2,6 @@
   (:require [re-frame.core :refer [dispatch]]
             [status-im.ui.components.toolbar.styles :as st]))
 
-(defn hamburger [handler]
-  {:icon                :icons/hamburger
-   :handler             handler
-   :accessibility-label :toolbar-hamburger-menu})
-
-(defn hamburger-white [handler]
-  (merge (hamburger handler)
-         {:icon-opts {:color :white}
-          :handler handler}))
-
 (defn add [handler]
   {:icon    :icons/add
    :handler handler})
@@ -57,7 +47,7 @@
 
 (defn list-white [handler]
   {:icon      :icons/transaction-history
-   :icon-opts {:color :white :style {:viewBox "-108 65.9 24 24"}}
+   :icon-opts {:color :white}
    :handler   handler})
 
 (defn add-wallet [handler]

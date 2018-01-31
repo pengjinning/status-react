@@ -6,24 +6,18 @@
             [status-im.ui.components.react :as react]
             [status-im.ui.components.status-bar.view :as status-bar]
             [status-im.ui.components.styles :as styles]
-            [status-im.ui.components.tabs.views :as tabs]
             [status-im.ui.components.toolbar.actions :as actions]
             [status-im.ui.components.toolbar.view :as toolbar]
             [status-im.i18n :as i18n]
             [status-im.ui.screens.wallet.transactions.styles :as transactions.styles]
             [status-im.ui.screens.wallet.views :as wallet.views]
-            [status-im.utils.money :as money])
+            [status-im.utils.money :as money]
+            [status-im.ui.components.styles :as common.styles])
   (:require-macros [status-im.utils.views :refer [defview letsubs]]))
 
 (defn on-delete-transaction
   [{:keys [id]}]
   (re-frame/dispatch [:wallet/discard-unsigned-transaction-with-confirmation id]))
-
-;; TODO (andrey) implement
-(defn unsigned-action [unsigned-transactions-count]
-  [toolbar/text-action {:disabled? (zero? unsigned-transactions-count)
-                        :handler #(re-frame/dispatch [:navigate-to-modal :wallet-transactions-sign-all])}
-   (i18n/label :t/transactions-sign-all)])
 
 (defn history-action [filter?]
   (merge
@@ -35,16 +29,17 @@
   (and (every? :checked? (:type filter-data))
        (every? :checked? (:tokens filter-data))))
 
-(defn- toolbar-view [current-tab unsigned-transactions-count filter-data]
+(defn- toolbar-view [current-tab filter-data]
   [toolbar/toolbar {:flat? true}
    toolbar/default-nav-back
    [toolbar/content-title (i18n/label :t/transactions)]
    (case current-tab
      :transactions-history  [toolbar/actions [(history-action (not (all-checked? filter-data)))]]
-     :unsigned-transactions nil)]) ;; TODO (andrey) implement [unsigned-action unsigned-transactions-count]
+     :unsigned-transactions nil
+     nil)]) ;; TODO (andrey) implement [unsigned-action unsigned-transactions-count]
 
 
-(defn action-buttons [{:keys [id to value] :as transaction}]
+(defn action-buttons [{:keys [id] :as transaction}]
   [react/view {:style transactions.styles/action-buttons}
    [button/primary-button {:style    {:margin-right 12}
                            :on-press #(re-frame/dispatch [:wallet/show-sign-transaction id])}
@@ -104,7 +99,6 @@
 (defn- empty-text [s] [react/text {:style transactions.styles/empty-text} s])
 
 (defn filtered-transaction? [transaction filter-data]
-  ;; TODO(jeluard) extend to token when available
   (:checked? (some #(when (= (:type transaction) (:id %)) %) (:type filter-data))))
 
 (defn update-transactions [m filter-data]
@@ -139,23 +133,15 @@
    content
    [list/item-checkbox {:checked? checked? :on-value-change #(re-frame/dispatch [:wallet.transactions/filter path %])}]])
 
-#_ ;; TODO(jeluard) Will be used for ERC20 tokens
-(defn- item-filter-tokens [{:keys [symbol label checked?]}]
-  [item-filter {:icon (transaction-type->icon :pending) :checked? checked?} ;; TODO(jeluard) add proper token icon
-   [list/item-content
-    [list/item-primary label]
-    [list/item-secondary symbol]]])
-
 (defn- render-item-filter [{:keys [id label checked?]}]
   [item-filter {:icon (transaction-type->icon id) :checked? checked? :path {:type id}}
    [list/item-content
     [list/item-primary-only label]]])
 
 (defn- wrap-filter-data [m]
-  ;; TODO(jeluard) Restore tokens filtering once token support is added
   [{:title      (i18n/label :t/transactions-filter-type)
     :key        :type
-    :render-fn  render-item-filter ;(list/wrap-render-fn item-filter-type)
+    :render-fn  render-item-filter
     :data       (:type m)}])
 
 (defview filter-history []
@@ -187,23 +173,33 @@
 
 (def tabs-list
   [{:view-id :transactions-history
-    :content history-tab
-    :screen history-list}
+    :content history-tab}
    {:view-id :unsigned-transactions
-    :content unsigned-tab
-    :screen unsigned-list}])
+    :content unsigned-tab}])
+
+(defn tab [view-id content active?]
+  [react/touchable-highlight {:style    common.styles/flex
+                              :disabled active?
+                              :on-press #(re-frame/dispatch [:navigation-replace view-id])}
+   [react/view {:style (transactions.styles/tab active?)}
+    [content active?]]])
+
+(defn tabs [current-view-id]
+  [react/view {:style transactions.styles/tabs-container}
+   (for [{:keys [content view-id]} tabs-list]
+     ^{:key view-id} [tab view-id content (= view-id current-view-id)])])
 
 (defview transactions []
-  (letsubs [unsigned-transactions-count [:wallet.transactions/unsigned-transactions-count]
-            current-tab                 [:get :view-id]
+  (letsubs [current-tab                 [:get :view-id]
             filter-data                 [:wallet.transactions/filters]]
     [react/view {:style styles/flex}
      [status-bar/status-bar]
-     [toolbar-view current-tab unsigned-transactions-count filter-data]
-     [tabs/swipable-tabs tabs-list current-tab true
-      {:navigation-event     :navigation-replace
-       :tab-style            transactions.styles/tab
-       :tabs-container-style transactions.styles/tabs-container}]]))
+     [toolbar-view current-tab filter-data]
+     [tabs current-tab]
+     [(case current-tab
+        :transactions-history history-list
+        :unsigned-transactions unsigned-list
+        react/view)]]))
 
 (defn- pretty-print-asset [symbol amount]
   (case symbol

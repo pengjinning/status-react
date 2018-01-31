@@ -21,7 +21,8 @@
             [status-im.test.utils.gfycat.core]
             [status-im.test.utils.signing-phrase.core]
             [status-im.test.utils.transducers]
-            [status-im.test.utils.async]))
+            [status-im.test.utils.async]
+            [status-im.test.utils.datetime]))
 
 (enable-console-print!)
 
@@ -35,7 +36,7 @@
  'status-im.test.utils.async
  'status-im.test.chat.events
  'status-im.test.accounts.events
- ;;'status-im.test.contacts.events
+ 'status-im.test.contacts.events
  'status-im.test.profile.events
  'status-im.test.wallet.events
  'status-im.test.data-store.realm.core
@@ -47,10 +48,11 @@
  'status-im.test.utils.utils
  'status-im.test.utils.money
  'status-im.test.utils.clocks
- ;;'status-im.test.utils.pre-receiver
+ 'status-im.test.utils.pre-receiver
  'status-im.test.utils.ethereum.eip681
  'status-im.test.utils.ethereum.core
  'status-im.test.utils.random
  'status-im.test.utils.gfycat.core
  'status-im.test.utils.signing-phrase.core
- 'status-im.test.utils.transducers)
+ 'status-im.test.utils.transducers
+ 'status-im.test.utils.datetime)

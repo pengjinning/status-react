@@ -10,6 +10,7 @@ def installJSDeps() {
         println "#${attempt} attempt to install npm deps"
         sh 'npm install'
         installed = fileExists('node_modules/web3/index.js')
+        attemp = attempt + 1
     }
 }
 
@@ -34,11 +35,8 @@ node ('macos1') {
       sh 'rm -rf node_modules'
       sh 'cp .env.jenkins .env'
       sh 'lein deps'
-      installJSDeps()
-      sh '[ -f node_modules/react-native/packager/src/JSTransformer/index.js ] && sed -i "" "s/301000/1201000/g" node_modules/react-native/packager/src/JSTransformer/index.js || echo "New packager"'
 
-      // Fix silly RN upgrade weird env issue
-      sh 'cp findSymlinkedModules.js.patch node_modules/react-native/local-cli/util/findSymlinkedModules.js'
+      installJSDeps()
 
       sh 'mvn -f modules/react-native-status/ios/RCTStatus dependency:unpack'
       sh 'cd ios && pod install && cd ..'
@@ -59,7 +57,7 @@ node ('macos1') {
 
     stage('Deploy (Android)') {
       withCredentials([string(credentialsId: 'diawi-token', variable: 'token')]) {
-        def job = sh(returnStdout: true, script: 'curl https://upload.diawi.com/ -F token='+token+' -F file=@android/app/build/outputs/apk/app-release.apk -F find_by_udid=0 -F wall_of_apps=0 | jq -r ".job"').trim()
+        def job = sh(returnStdout: true, script: 'curl https://upload.diawi.com/ -F token='+token+' -F file=@android/app/build/outputs/apk/release/app-release.apk -F find_by_udid=0 -F wall_of_apps=0 | jq -r ".job"').trim()
         sh 'sleep 10'
         def hash = sh(returnStdout: true, script: "curl -vvv 'https://upload.diawi.com/status?token="+token+"&job="+job+"'|jq -r '.hash'").trim()
         apkUrl = 'https://i.diawi.com/' + hash

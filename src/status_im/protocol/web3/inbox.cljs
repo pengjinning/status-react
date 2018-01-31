@@ -1,67 +1,68 @@
 (ns status-im.protocol.web3.inbox
-  (:require [status-im.constants :as constants]
-            [status-im.protocol.web3.utils :as utils]
-            [status-im.native-module.core :as status]
+  (:require [status-im.native-module.core :as status]
+            [taoensso.timbre :as log]
+            [re-frame.core :as re-frame]
+            [clojure.string :as string]
             [status-im.protocol.web3.keys :as keys]
-            [taoensso.timbre :as log]))
+            [status-im.protocol.web3.utils :as utils]))
 
+(def peers (atom #{}))
+(def trusted-peers (atom #{}))
 
-;; TODO(oskarth): Determine if this is the correct topic or not
-;; If it is, use constant in other namespace
-(def default-topic "0xaabb11ee")
+;; NOTE(dmitryn) Expects JSON response like:
+;; {"error": "msg"} or {"result": true}
+(defn- parse-json [s]
+  (try
+    (let [res (-> s
+                  js/JSON.parse
+                  (js->clj :keywordize-keys true))]
+      ;; NOTE(dmitryn): AddPeer() may return {"error": ""}
+      ;; assuming empty error is a success response
+      ;; by transforming {"error": ""} to {:result true}
+      (if (and (:error res)
+               (= (:error res) ""))
+        {:result true}
+        res))
+    (catch :default e
+      {:error (.-message e)})))
 
-(def inbox-password "status-offline-inbox")
+(defn- response-handler [error-fn success-fn]
+  (fn handle-response
+    ([response]
+     (let [{:keys [error result]} (parse-json response)]
+       (handle-response error result)))
+    ([error result]
+     (if error
+       (error-fn error)
+       (success-fn result)))))
 
-;; TODO(oskarth): Hardcoded to local enode for preMVP, will be in bootnodes later
-(def default-enode "enode://0f51d75c9469de0852571c4618fe151265d4930ea35f968eb1a12e69c12f7cbabed856a12b31268a825ca2c9bafa47ef665b1b17be1ab71de83338c4b7439b24@127.0.0.1:30303")
+(defn add-peer [enode success-fn error-fn]
+  (if (@peers enode)
+    (success-fn true)
+    (status/add-peer enode
+                     (response-handler error-fn (fn [result]
+                                                  (swap! peers conj enode)
+                                                  (success-fn result))))))
 
-;; adamb's status-cluster enode
-(def cluster-enode (:address constants/default-wnode))
+(defn mark-trusted-peer [web3 enode success-fn error-fn]
+  (if (@trusted-peers enode)
+    (success-fn true)
+    (.markTrustedPeer (utils/shh web3)
+                      enode
+                      (response-handler error-fn (fn [result]
+                                                   (swap! trusted-peers conj enode)
+                                                   (success-fn result))))))
 
-;; TODO(oskarth): Rewrite callback-heavy code with CSP and/or coeffects
-;; TODO(oskarth): Memoize addPeer and markTrusted, similar to keys/get-sym-key
-;; TODO(oskarth): Actually deal with errors, all in same cb - outside scope of this
-(defn request-messages! [web3 {:keys [enode topic password]
-                               :or {enode    default-enode
-                                    password inbox-password
-                                    topic    default-topic}} callback]
-  (status/add-peer
-   enode
-   (fn [res]
-     (log/info "offline inbox: add peer" enode res)
-     (let [args {:jsonrpc "2.0"
-                 :id      1
-                 :method  "shh_markTrustedPeer"
-                 :params  [enode]}
-           payload (.stringify js/JSON (clj->js args))]
-       (log/info "offline inbox: mark-trusted-peer request")
-       (status/call-web3
-        payload
-        (fn [res2]
-          (log/info "offline inbox: mark-trusted-peer response" enode res2)
-          (keys/get-sym-key web3 password
-                            (fn [sym-key-id]
-                              (log/info "offline inbox: sym-key-id" sym-key-id)
-                              (let [args {:jsonrpc "2.0"
-                                          :id      2
-                                          :method  "shh_requestMessages"
-                                          ;; NOTE: "from" and "to" parameters omitted here
-                                          ;; by default "from" is 24 hours ago and "to" is time now
-                                          :params  [{:mailServerPeer enode
-                                                     :topic          topic
-                                                     :symKeyID       sym-key-id}]}
-                                    payload (.stringify js/JSON (clj->js args))]
-                                (log/info "offline inbox: request-messages request")
-                                (log/info "offline inbox: request-messages args" (pr-str args))
-                                (log/info "offline inbox: request-messages payload" (pr-str payload))
+(defn request-messages [web3 wnode topic sym-key-id success-fn error-fn]
+  (log/info "offline inbox: sym-key-id" sym-key-id)
+  (let [opts {:mailServerPeer wnode
+              :topic          topic
+              :symKeyID       sym-key-id}]
+    (log/info "offline inbox: request-messages request")
+    (log/info "offline inbox: request-messages args" (pr-str opts))
+    (.requestMessages (utils/shh web3)
+                      (clj->js opts)
+                      (response-handler error-fn success-fn))))
 
-                                (status/call-web3 payload callback))))))))))
-
-;; TODO(oskarth): Use web3 binding to do (.markTrustedPeer web3 enode cb)
-;;
-;; TODO(oskarth): Use web3 binding instead of raw RPC above, pending binding and deps:
-;; (.requestMessages (utils/shh web3)
-;;                   (clj->js opts)
-;;                   callback
-;;                   #(log/warn :request-messages-error
-;;                             (.stringify js/JSON (clj->js opts)) %))
+(defn initialize! [web3]
+  (re-frame/dispatch [:initialize-offline-inbox web3]))

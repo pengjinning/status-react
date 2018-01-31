@@ -2,7 +2,7 @@
   (:require-macros [status-im.utils.views :as views])
   (:require [re-frame.core :as re-frame]
             [status-im.ui.components.react :as react]
-            [status-im.ui.components.qr-code :as components.qr-code]
+            [status-im.ui.components.qr-code-viewer.views :as components.qr-code-viewer]
             [status-im.ui.components.toolbar.actions :as actions]
             [status-im.ui.components.toolbar.view :as toolbar]
             [status-im.ui.components.status-bar.view :as status-bar]
@@ -37,7 +37,7 @@
 (views/defview qr-code [amount symbol]
   (views/letsubs [account [:get-current-account]
                   chain-id [:get-network-id]]
-    [components.qr-code/qr-code
+    [components.qr-code-viewer/qr-code
      (let [address (ethereum/normalized-address (:address account))
            params  {:chain-id chain-id :value amount :symbol (or symbol :ETH)}]
        {:value   (generate-value address params)
@@ -58,7 +58,9 @@
       [react/view components.styles/flex
         [react/view styles/network-container
          [react/view styles/qr-container
-          [qr-code amount symbol]]]
+          [react/with-activity-indicator
+           {:style wallet.styles/qr-code-preview}
+           [qr-code amount symbol]]]]
         [react/view wallet.styles/amount-container
          [components/amount-input
           {:error         amount-error

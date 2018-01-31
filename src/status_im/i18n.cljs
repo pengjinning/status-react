@@ -284,7 +284,9 @@
                                                 :lt
                                                 :sr-RS_#Latn
                                                 :sr
-                                                :sv}))
+                                                :sv
+                                                :ja
+                                                :uk}))
 
 (spec/def ::supported-locale supported-locales)
 (spec/def ::supported-locales (spec/coll-of ::supported-locale :kind set? :into #{}))

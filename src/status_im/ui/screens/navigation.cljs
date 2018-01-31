@@ -12,7 +12,7 @@
 
 (defn- replace-top-element [stack view-id]
   (let [stack' (if (> 2 (count stack))
-                 (list :chat-list)
+                 (list :home)
                  (pop stack))]
     (conj stack' view-id)))
 
@@ -24,12 +24,12 @@
 (defn- can-navigate-back? [db]
   (not (get db :accounts/creating-account?)))
 
-(defn- navigate-to-clean [db view-id]
+;; public fns
+
+(defn navigate-to-clean [db view-id]
   (-> db
       (assoc :navigation-stack (list))
       (push-view view-id)))
-
-;; public fns
 
 (defmulti preload-data!
   (fn [db [_ view-id]] (or view-id (:view-id db))))

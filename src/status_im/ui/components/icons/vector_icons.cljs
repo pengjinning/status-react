@@ -4,7 +4,8 @@
             [status-im.utils.platform :as platform]
             [status-im.ui.components.styles :as styles]
             [status-im.ui.components.react :as react]
-            [status-im.react-native.js-dependencies :as rn-dependencies]))
+            [status-im.react-native.js-dependencies :as rn-dependencies])
+  (:refer-clojure :exclude [use]))
 
 (defn get-property [name]
   (aget rn-dependencies/svg name))
@@ -20,15 +21,14 @@
 (def g (get-class "G"))
 (def rect (get-class "Rect"))
 (def path (get-class "Path"))
-(def use-def (get-class "Use"))
+(def use (get-class "Use"))
 (def defs (get-class "Defs"))
 
-(def icons {:icons/chats               (slurp-svg "./resources/icons/bottom/chats_gray.svg")
-            :icons/chats-active        (slurp-svg "./resources/icons/bottom/chats_active.svg")
-            :icons/contacts            (slurp-svg "./resources/icons/bottom/contacts_gray.svg")
-            :icons/contacts-active     (slurp-svg "./resources/icons/bottom/contacts_active.svg")
-            :icons/discover            (slurp-svg "./resources/icons/bottom/discover_gray.svg")
-            :icons/discover-active     (slurp-svg "./resources/icons/bottom/discover_active.svg")
+(def icons {:icons/discover            (slurp-svg "./resources/icons/bottom/discover_gray.svg")
+            :icons/home                (slurp-svg "./resources/icons/bottom/home_gray.svg")
+            :icons/home-active         (slurp-svg "./resources/icons/bottom/home_blue.svg")
+            :icons/profile             (slurp-svg "./resources/icons/bottom/profile_gray.svg")
+            :icons/profile-active      (slurp-svg "./resources/icons/bottom/profile_blue.svg")
             :icons/wallet              (slurp-svg "./resources/icons/bottom/wallet_gray.svg")
             :icons/wallet-active       (slurp-svg "./resources/icons/bottom/wallet_active.svg")
             :icons/speaker             (slurp-svg "./resources/icons/speaker.svg")
@@ -52,6 +52,7 @@
             :icons/fullscreen          (slurp-svg "./resources/icons/fullscreen.svg")
             :icons/group-big           (slurp-svg "./resources/icons/group_big.svg")
             :icons/group-chat          (slurp-svg "./resources/icons/group_chat.svg")
+            :icons/chats               (slurp-svg "./resources/icons/chats.svg")
             :icons/hamburger           (slurp-svg "./resources/icons/hamburger.svg")
             :icons/hidden              (slurp-svg "./resources/icons/hidden.svg")
             :icons/mic                 (slurp-svg "./resources/icons/mic.svg")
@@ -72,14 +73,13 @@
             :icons/tooltip-triangle    (slurp-svg "./resources/icons/tooltip-triangle.svg")
             :icons/open                (slurp-svg "./resources/icons/open.svg")
             :icons/network             (slurp-svg "./resources/icons/network.svg")
-            :icons/wnode               (slurp-svg "./resources/icons/wnode.svg")})
+            :icons/wnode               (slurp-svg "./resources/icons/wnode.svg")
+            :icons/refresh             (slurp-svg "./resources/icons/refresh.svg")})
 
 (defn normalize-property-name [n]
   (if (= n :icons/options)
     (if platform/ios? :icons/dots-horizontal :icons/dots-vertical)
     n))
-
-(def default-viewbox {:width 24 :height 24 :viewBox "0 0 24 24"})
 
 (defn icon
   ([name] (icon name nil))
@@ -89,22 +89,19 @@
    [react/view {:style               container-style
                 :accessibility-label accessibility-label}
     (if-let [icon-fn (get icons (normalize-property-name name))]
-      (into []
-            (concat
-              [svg (merge default-viewbox style)]
-              (icon-fn
-                (cond
-                  (keyword? color)
-                  (case color
-                    :dark styles/icon-dark-color
-                    :gray styles/icon-gray-color
-                    :blue styles/color-light-blue
-                    :active styles/color-blue4
-                    :white styles/color-white
-                    :red styles/icon-red-color
-                    styles/icon-dark-color)
-                  (string? color)
-                  color
-                  :else
-                  styles/icon-dark-color))))
+      (icon-fn
+        (cond
+          (keyword? color)
+          (case color
+            :dark styles/icon-dark-color
+            :gray styles/icon-gray-color
+            :blue styles/color-light-blue
+            :active styles/color-blue4
+            :white styles/color-white
+            :red styles/icon-red-color
+            styles/icon-dark-color)
+          (string? color)
+          color
+          :else
+          styles/icon-dark-color))
       (throw (js/Error. (str "Unknown icon: " name))))]))

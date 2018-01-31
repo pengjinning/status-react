@@ -73,33 +73,54 @@
                                :group-chat group-chat
                                :current-public-key current-public-key)])
 
-(defview messages-view [chat-id group-chat]
-  (letsubs [messages           [:get-chat-messages chat-id]
+
+(defview messages-view-animation [message-view]
+  ;; smooths out appearance of message-view
+  (letsubs [opacity       (anim/create-value 0)
+            duration      (if platform/android? 100 200)
+            timeout       (if platform/android? 50 0)]
+    {:component-did-mount (fn [component]
+                            (anim/start
+                             (anim/anim-sequence
+                              [(anim/anim-delay timeout)
+                               (anim/spring opacity {:toValue  1
+                                                     :duration duration})])))}
+    [react/with-activity-indicator
+     {:style   style/message-view-preview
+      :preview [react/view style/message-view-preview]}
+     [react/animated-view {:style (style/message-view-animated opacity)}
+      message-view]]))
+
+(defview messages-view [group-chat]
+  (letsubs [messages           [:get-current-chat-messages]
             current-public-key [:get-current-public-key]]
     [list/flat-list {:data                      messages
-                     :render-fn                 #(message-row {:group-chat         group-chat
-                                                               :current-public-key current-public-key
-                                                               :row                %1})
+                     :render-fn                 (fn [{:keys [message-id] :as message}]
+                                                  ^{:key message-id} [message-row {:group-chat         group-chat
+                                                                                   :current-public-key current-public-key
+                                                                                   :row                message}])
                      :inverted                  true
                      :onEndReached              #(re-frame/dispatch [:load-more-messages])
                      :enableEmptySections       true
                      :keyboardShouldPersistTaps (if platform/android? :always :handled)}]))
 
 (defview chat []
-  (letsubs [{:keys [chat-id group-chat input-text]} [:get-current-chat]
-            show-actions?                           [:get-current-chat-ui-prop :show-actions?]
-            show-bottom-info?                       [:get-current-chat-ui-prop :show-bottom-info?]
-            show-emoji?                             [:get-current-chat-ui-prop :show-emoji?]
-            layout-height                           [:get :layout-height]]
-    {:component-did-mount    #(re-frame/dispatch [:check-and-open-dapp!])
-     :component-will-unmount #(re-frame/dispatch [:set-chat-ui-props {:show-emoji? false}])}
+  (letsubs [{:keys [group-chat input-text]} [:get-current-chat]
+            show-actions?                   [:get-current-chat-ui-prop :show-actions?]
+            show-bottom-info?               [:get-current-chat-ui-prop :show-bottom-info?]
+            show-emoji?                     [:get-current-chat-ui-prop :show-emoji?]
+            layout-height                   [:get :layout-height]
+            current-view                    [:get :view-id]]
+    {:component-will-unmount #(re-frame/dispatch [:set-chat-ui-props {:show-emoji? false}])}
     [react/view {:style style/chat-view
                  :on-layout (fn [event]
                               (let [height (.. event -nativeEvent -layout -height)]
                                 (when (not= height layout-height)
                                   (re-frame/dispatch [:set-layout-height height]))))}
      [chat-toolbar]
-     [messages-view chat-id group-chat]
+     (when (= :chat current-view)
+       [messages-view-animation
+        [messages-view group-chat]])
      [input/container {:text-empty? (string/blank? input-text)}]
      (when show-actions?
        [actions/actions-view])

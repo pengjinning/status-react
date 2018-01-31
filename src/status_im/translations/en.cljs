@@ -13,6 +13,8 @@
    :next                                  "Next"
    :open                                  "Open"
    :description                           "Description"
+   :enter-url                             "Enter URL"
+   :open-url                              "Open URL"
    :url                                   "URL"
    :type-a-message                        "Type a message..."
    :type-a-command                        "Start typing a command..."
@@ -27,7 +29,13 @@
 
    ;;drawer
    :switch-users                          "Switch users"
+   :logout-title                          "Log out?"
+   :logout-are-you-sure                   "Are you sure you want\nto log out?"
+   :logout                                "Log out"
    :current-network                       "Current network"
+
+   ;;home
+   :home                                  "Home"
 
    ;;chat
    :is-typing                             "is typing"
@@ -79,10 +87,13 @@
    ;;profile
    :profile                               "Profile"
    :edit-profile                          "Edit profile"
+   :main-currency                         "Main currency"
    :message                               "Message"
+   :notifications                         "Notifications"
    :not-specified                         "Not specified"
    :public-key                            "Public key"
    :phone-number                          "Phone number"
+   :share-contact-code                    "Share my contact code"
    :update-status                         "Update your status..."
    :add-a-status                          "Add a status..."
    :status-prompt                         "Set your status. Using #hastags will help others discover you and talk about what's on your mind"
@@ -90,12 +101,11 @@
    :in-contacts                           "In contacts"
    :remove-from-contacts                  "Remove from contacts"
    :start-conversation                    "Start conversation"
-   :send-transaction                      "Send transaction"
    :testnet-text                          "You’re on the {{testnet}} Testnet. Do not send real ETH or SNT to your address"
    :mainnet-text                          "You’re on the Mainnet. Real ETH will be sent"
 
    ;;make_photo
-   :image-source-title                    "Profile image"
+   :image-source-title                    "Edit picture"
    :image-source-make-photo               "Capture"
    :image-source-gallery                  "Select from gallery"
 
@@ -106,6 +116,7 @@
 
    :browsing-title                        "Browse"
    :browsing-open-in-web-browser          "Open in web browser"
+   :browsing-open-in-browser              "Open in browser"
    :browsing-cancel                       "Cancel"
 
    ;;sign-up
@@ -175,6 +186,7 @@
    :choose-from-contacts                  "Choose from contacts"
    :no-contacts                           "No contacts yet"
    :show-qr                               "Show QR code"
+   :qr-code-public-key-hint               "Share this code to \nstart chatting"
    :enter-address                         "Enter address"
    :more                                  "more"
 
@@ -306,8 +318,6 @@
    :wallet-manage-assets                  "Manage Assets"
    :signing-phrase-description            "Sign the transaction by entering your password. Make sure that the words above match your secret signing phrase"
    :wallet-insufficient-funds             "Insufficient funds"
-   :wallet-my-token                       "My {{symbol}}"
-   :wallet-market-value                   "Market value"
    :request-transaction                   "Request transaction"
    :send-request                          "Send request"
    :share                                 "Share"
@@ -340,6 +350,9 @@
    :sign-later-title                      "Sign transaction later?"
    :sign-later-text                       "Check the transaction history to sign this transaction"
    :not-applicable                        "Not applicable for unsigned transactions"
+   :send-transaction                      "Send transaction"
+   :receive-transaction                   "Receive transaction"
+   :transaction-history                   "Transaction History"
 
    ;; Wallet Send
    :wallet-choose-recipient               "Choose Recipient"
@@ -374,6 +387,7 @@
    :process-json                          "Process JSON"
    :error-processing-json                 "Error processing JSON"
    :rpc-url                               "RPC URL"
+   :network                               "Network"
    :remove-network                        "Remove network"
    :network-settings                      "Network settings"
    :offline-messaging-settings            "Offline messages settings"
@@ -381,4 +395,9 @@
    :connecting-requires-login             "Connecting to another network requires login"
    :close-app-title                       "Warning!"
    :close-app-content                     "The app will stop and close. When you reopen it, the selected network will be used"
-   :close-app-button                      "Confirm"})
+   :close-app-button                      "Confirm"
+
+   ;; browser
+   :browser                               "Browser"
+   :enter-dapp-url                        "Enter a ÐApp URL"
+   :dapp                                  "ÐApp"})

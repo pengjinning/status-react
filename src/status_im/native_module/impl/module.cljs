@@ -1,13 +1,12 @@
 (ns status-im.native-module.impl.module
   (:require-macros
-   [cljs.core.async.macros :as async :refer [go-loop go]])
+   [cljs.core.async.macros :refer [go-loop go]])
   (:require [status-im.ui.components.react :as r]
             [re-frame.core :refer [dispatch]]
             [taoensso.timbre :as log]
             [cljs.core.async :as async :refer [<! timeout]]
             [status-im.utils.js-resources :as js-res]
-            [status-im.utils.platform :as p]
-            [status-im.utils.scheduler :as scheduler]
+            [status-im.utils.platform :as p] 
             [status-im.utils.types :as types]
             [status-im.utils.transducers :as transducers]
             [status-im.utils.async :as async-util]

@@ -13,7 +13,9 @@
             status-im.commands.specs
             status-im.ui.screens.profile.db
             status-im.ui.screens.discover.db
-            status-im.ui.screens.network-settings.db))
+            status-im.ui.screens.network-settings.db
+            status-im.ui.screens.offline-messaging-settings.db
+            status-im.ui.screens.browser.db))
 
 (def transaction-send-default
   {:symbol    :ETH
@@ -31,10 +33,10 @@
              :group/contact-groups       {}
              :group/selected-contacts    #{}
              :chats                      {}
-             :current-chat-id            constants/console-chat-id 
+             :current-chat-id            constants/console-chat-id
              :selected-participants      #{}
              :discoveries                {}
-             :discover-search-tags       '()
+             :discover-search-tags       #{}
              :discover-current-dapp      {}
              :tags                       []
              :sync-state                 :done
@@ -44,7 +46,11 @@
              :prices                     {}
              :notifications              {}
              :network                    constants/default-network
-             :networks/networks          constants/default-networks})
+             :networks/networks          constants/default-networks
+             :inbox/wnode                constants/default-wnode
+             :inbox/topic                constants/inbox-topic
+             :inbox/password             constants/inbox-password
+             :my-profile/editing?        false})
 
 ;;;;GLOBAL
 
@@ -119,10 +125,16 @@
                   :my-profile/drawer
                   :my-profile/profile
                   :my-profile/default-name
+                  :my-profile/editing?
                   :networks/selected-network
                   :networks/networks
                   :node/after-start
-                  :node/after-stop]
+                  :node/after-stop
+                  :inbox/wnode
+                  :inbox/topic
+                  :inbox/password
+                  :browser/browsers
+                  :browser/options]
                  :opt-un
                  [::current-public-key
                   ::modal
@@ -157,9 +169,9 @@
                   :chat/chat-ui-props
                   :chat/chat-list-ui-props
                   :chat/layout-height
-                  :chat/expandable-view-height-to-value 
+                  :chat/expandable-view-height-to-value
                   :chat/message-data
-                  :chat/message-status 
+                  :chat/message-status
                   :chat/selected-participants
                   :chat/chat-loaded-callbacks 
                   :chat/public-group-topic
@@ -175,7 +187,6 @@
                   :discoveries/tags
                   :discoveries/current-tag
                   :discoveries/request-discoveries-timer
-                  :discoveries/new-discover
                   :wallet/wallet
                   :wallet/wallet.transactions
                   :wallet/wallet-selected-asset

@@ -7,7 +7,7 @@
             [status-im.protocol.core :as protocol]
             [status-im.utils.utils :refer [http-post]]
             [status-im.utils.phone-number :refer [format-phone-number]]
-            [status-im.utils.random :as random] 
+            [status-im.utils.random :as random]
             [taoensso.timbre :as log]
             [cljs.reader :refer [read-string]]
             [status-im.utils.js-resources :as js-res]
@@ -17,9 +17,12 @@
             [status-im.utils.gfycat.core :refer [generate-gfy]]
             [status-im.i18n :refer [label]]
             [status-im.ui.screens.contacts.navigation]
+            [status-im.ui.screens.navigation :as navigation]
+            [status-im.ui.screens.discover.events :as discover-events]
             [status-im.chat.console :as console-chat]
             [status-im.commands.events.loading :as loading-events]
-            [cljs.spec.alpha :as spec]))
+            [cljs.spec.alpha :as spec]
+            [status-im.protocol.web3.utils :as web3.utils]))
 
 ;;;; COFX
 
@@ -68,7 +71,8 @@
                                         :status        status
                                         :fcm-token     fcm-token}
                               :keypair {:public  updates-public-key
-                                        :private updates-private-key}}}})))
+                                        :private updates-private-key}
+                              :timestamp (web3.utils/timestamp)}}})))
 
 (reg-fx
   ::reset-pending-messages
@@ -154,7 +158,7 @@
                                   :photo-path       (identicon whisper-identity)
                                   :whisper-identity whisper-identity}]
                      (if (contacts/exists? whisper-identity)
-                       (dispatch [:add-pending-contact whisper-identity])
+                       (dispatch [:add-pending-contact-and-open-chat whisper-identity])
                        (dispatch [:add-new-contact-and-open-chat contact])))
                    (dispatch [:set :contacts/new-public-key-error (label :t/unknown-address)]))))))
 
@@ -173,13 +177,19 @@
   (fn [_ [on-contacts-event-creator]]
     {::fetch-contacts-from-phone! on-contacts-event-creator}))
 
+(defn watch-contact
+  "Takes effects map, adds effects necessary to start watching contact"
+  [{:keys [db] :as fx} {:keys [public-key private-key] :as contact}]
+  (cond-> fx
+    (and public-key private-key)
+    (assoc ::watch-contact (merge
+                             (select-keys db [:web3])
+                             (select-keys contact [:whisper-identity :public-key :private-key])))))
+
 (register-handler-fx
   :watch-contact
-  (fn [{:keys [db]} [_ {:keys [public-key private-key] :as contact}]]
-    (when (and public-key private-key)
-      {::watch-contact (merge
-                         (select-keys db [:web3])
-                         (select-keys contact [:whisper-identity :public-key :private-key]))})))
+  (fn [{:keys [db]} [_ contact]]
+    (watch-contact {:db db} contact)))
 
 (register-handler-fx
   :update-contact!
@@ -234,7 +244,7 @@
            :bot-url          bot-url
            :description      description
            :dapp-hash        dapp-hash})
-        all-default-contacts (conj default-contacts console-chat/contact)] 
+        all-default-contacts (conj default-contacts console-chat/contact)]
     [[:add-contacts all-default-contacts]]))
 
 (defn- prepare-add-chat-events [contacts default-contacts]
@@ -258,7 +268,7 @@
 (register-handler-fx
   :load-default-contacts!
   [(inject-cofx ::get-default-contacts-and-groups)]
-  (fn [{:keys [db default-contacts default-groups] :as cofx} _]
+  (fn [{:keys [db default-contacts default-groups]} _]
     (let [{:contacts/keys [contacts] :group/keys [contact-groups]} db]
       {:dispatch-n (concat
                     (prepare-default-groups-events contact-groups default-groups)
@@ -288,7 +298,7 @@
                              ;; NOTE(oskarth): Overwriting default contacts here
                              ;;(remove #(identities (:whisper-identity %)))
                              (map #(vector (:whisper-identity %) %))
-                             (into {})) 
+                             (into {}))
           fx            {:db              (update db :contacts/contacts merge new-contacts')
                          ::save-contacts! (vals new-contacts')}]
       (transduce (map second)
@@ -303,48 +313,62 @@
             :contacts/click-handler
             :contacts/click-action)))
 
-(register-handler-fx
-  ::send-contact-request
-  (fn [{{:accounts/keys [accounts current-account-id] :as db} :db} [_ contact]]
-    (let [current-account (get accounts current-account-id)
-          fcm-token (get-in db [:notifications :fcm-token])]
-      {::send-contact-request-fx (merge
-                                   (select-keys db [:current-public-key :web3])
-                                   {:current-account-id current-account-id :fcm-token fcm-token}
-                                   (select-keys contact [:whisper-identity])
-                                   (select-keys current-account [:name :photo-path :status
-                                                                 :updates-public-key :updates-private-key]))})))
+(defn send-contact-request
+  "Takes effects map, adds effects necessary to send a contact request"
+  [{{:accounts/keys [accounts current-account-id] :as db} :db :as fx} contact]
+  (let [current-account (get accounts current-account-id)
+        fcm-token (get-in db [:notifications :fcm-token])]
+    (assoc fx
+           ::send-contact-request-fx
+           (merge
+             (select-keys db [:current-public-key :web3])
+             {:current-account-id current-account-id :fcm-token fcm-token}
+             (select-keys contact [:whisper-identity])
+             (select-keys current-account [:name :photo-path :status
+                                           :updates-public-key :updates-private-key])))))
 
-(register-handler-fx
-  ::add-new-contact
-  (fn [{:keys [db]} [_ {:keys [whisper-identity] :as contact}]]
-    {:db            (-> db
-                        (update-in [:contacts/contacts whisper-identity] merge contact)
-                        (assoc :contacts/new-identity ""))
-     :dispatch      [::send-contact-request contact]
-     ::save-contact contact}))
+(defn add-new-contact [fx {:keys [whisper-identity] :as contact}]
+  (-> fx
+      (send-contact-request contact)
+      (update-in [:db :contacts/contacts whisper-identity] merge contact)
+      (assoc-in  [:db :contacts/new-identity] "")
+      (assoc ::save-contact contact)))
 
 (register-handler-fx
   :add-new-contact-and-open-chat
   (fn [{:keys [db]} [_ {:keys [whisper-identity] :as contact}]]
     (when-not (get-in db [:contacts/contacts whisper-identity])
       (let [contact (assoc contact :address (public-key->address whisper-identity))]
-        {:dispatch-n [[::add-new-contact contact]
-                      [:start-chat whisper-identity {:navigation-replace? true}]]}))))
+        (-> {:db db}
+            (add-new-contact contact)
+            (update :db #(navigation/navigate-to-clean % :home))
+            (assoc :dispatch [:start-chat whisper-identity {:navigation-replace? true}]))))))
+
+(defn add-pending-contact [{:keys [db] :as fx} chat-or-whisper-id]
+  (let [{:keys [chats] :contacts/keys [contacts]} db
+        contact (if-let [contact-info (get-in chats [chat-or-whisper-id :contact-info])]
+                  (read-string contact-info)
+                  (get contacts chat-or-whisper-id))
+        contact' (assoc contact
+                        :address (public-key->address chat-or-whisper-id)
+                        :pending? false)]
+    (-> fx
+        (watch-contact contact')
+        (discover-events/send-portions-when-contact-exists chat-or-whisper-id)
+        (add-new-contact contact'))))
 
 (register-handler-fx
   :add-pending-contact
   (fn [{:keys [db]} [_ chat-or-whisper-id]]
-    (let [{:keys [chats] :contacts/keys [contacts]} db
-          contact (if-let [contact-info (get-in chats [chat-or-whisper-id :contact-info])]
-                    (read-string contact-info)
-                    (get contacts chat-or-whisper-id))
-          contact' (assoc contact
-                          :address (public-key->address chat-or-whisper-id)
-                          :pending? false)]
-      {:dispatch-n [[::add-new-contact contact']
-                    [:watch-contact contact']
-                    [:discoveries-send-portions chat-or-whisper-id]]})))
+    (add-pending-contact {:db db} chat-or-whisper-id)))
+
+(register-handler-fx
+  :add-pending-contact-and-open-chat
+  (fn [{:keys [db]} [_ whisper-id]]
+    (-> {:db db}
+        (add-pending-contact whisper-id)
+        (update :db #(navigation/navigate-to-clean % :home))
+        (assoc :dispatch [:start-chat whisper-id {:navigation-replace? true}]))))
 
 (register-handler-db
   :set-contact-identity-from-qr
@@ -420,17 +444,16 @@
                           :group/selected-contacts #{}
                           :new-chat-name "")
                    (assoc-in [:toolbar-search :show] nil)
-                   (assoc-in [:toolbar-search :text] ""))
-     :dispatch [:navigate-to :contact-toggle-list]}))
+                   (assoc-in [:toolbar-search :text] "")
+                   (navigation/navigate-to-clean :contact-toggle-list))}))
 
 (register-handler-fx
   :open-chat-with-contact
-  (fn [_ [_ {:keys [whisper-identity dapp?] :as contact}]]
-    {:dispatch-n (concat
-                  [[:navigate-to-clean :chat-list]
-                   [:start-chat whisper-identity]]
-                  (when-not dapp?
-                    [[::send-contact-request contact]]))}))
+  (fn [{:keys [db]} [_ {:keys [whisper-identity dapp?] :as contact}]]
+    (-> {:db db}
+        (cond-> (when-not dapp?) (send-contact-request contact))
+        (update :db #(navigation/navigate-to-clean % :home))
+        (assoc :dispatch [:start-chat whisper-identity]))))
 
 (register-handler-fx
   :add-contact-handler
@@ -438,7 +461,7 @@
     (if (spec/valid? :global/address id)
       {::request-contact-by-address id}
       {:dispatch (if (get-in db [:contacts/contacts id])
-                   [:add-pending-contact id]
+                   [:add-pending-contact-and-open-chat id]
                    [:add-new-contact-and-open-chat {:name             (generate-gfy id)
                                                     :photo-path       (identicon id)
                                                     :whisper-identity id}])})))
