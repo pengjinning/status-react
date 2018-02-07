@@ -1,9 +1,11 @@
 (ns status-im.chat.events
-  (:require [cljs.core.async :as async]
+  (:require [clojure.set :as set]
+            [cljs.core.async :as async]
             [re-frame.core :as re-frame]
             [taoensso.timbre :as log]
             [status-im.utils.handlers :as handlers]
             [status-im.utils.gfycat.core :as gfycat]
+            [status-im.utils.async :as async-utils]
             [status-im.chat.models :as model]
             [status-im.chat.console :as console-chat]
             [status-im.chat.constants :as chat-const]
@@ -13,6 +15,7 @@
             [status-im.data-store.contacts :as contacts-store]
             [status-im.data-store.requests :as requests-store]
             [status-im.data-store.messages :as messages-store]
+            [status-im.data-store.pending-messages :as pending-messages-store]
             [status-im.ui.screens.navigation :as navigation]
             [status-im.protocol.core :as protocol]
             [status-im.constants :as const]
@@ -21,9 +24,9 @@
             status-im.chat.events.commands
             status-im.chat.events.requests
             status-im.chat.events.animation
+            status-im.chat.events.send-message
             status-im.chat.events.queue-message
             status-im.chat.events.receive-message
-            status-im.chat.events.sign-up
             status-im.chat.events.console
             status-im.chat.events.webview-bridge))
 
@@ -46,6 +49,11 @@
     (assoc cofx :get-stored-messages messages-store/get-by-chat-id)))
 
 (re-frame/reg-cofx
+  :stored-message-ids
+  (fn [cofx _]
+    (assoc cofx :stored-message-ids (messages-store/get-stored-message-ids))))
+
+(re-frame/reg-cofx
   :all-stored-chats
   (fn [cofx _]
     (assoc cofx :all-stored-chats (chats-store/get-all))))
@@ -55,29 +63,51 @@
   (fn [cofx _]
     (assoc cofx :get-stored-chat chats-store/get-by-id)))
 
+(re-frame/reg-cofx
+  :inactive-chat-ids
+  (fn [cofx _]
+    (assoc cofx :inactive-chat-ids (chats-store/get-inactive-ids))))
+
 ;;;; Effects
 
-(def ^:private update-message-queue (async/chan 100))
-
-(async/go-loop [message (async/<! update-message-queue)]
-  (when message
-    (messages-store/update-message message)
-    (recur (async/<! update-message-queue))))
+(def ^:private realm-queue (async-utils/task-queue 2000))
 
 (re-frame/reg-fx
   :update-message
   (fn [message]
-    (async/put! update-message-queue message)))
+    (async/go (async/>! realm-queue #(messages-store/update-message message)))))
 
 (re-frame/reg-fx
   :save-message
   (fn [message]
-    (messages-store/save message)))
+    (async/go (async/>! realm-queue #(messages-store/save message)))))
+
+(re-frame/reg-fx
+  :delete-chat-messages
+  (fn [{:keys [chat-id group-chat debug?]}] 
+    (when (or group-chat debug?)
+      (async/go (async/>! realm-queue #(messages-store/delete-by-chat-id chat-id))))
+    (async/go (async/>! realm-queue #(pending-messages-store/delete-all-by-chat-id chat-id)))))
+
+(re-frame/reg-fx
+  :update-message-overhead
+  (fn [[chat-id network-status]]
+    (let [update-fn (if (= network-status :offline)
+                      chats-store/inc-message-overhead
+                      chats-store/reset-message-overhead)]
+      (async/go (async/>! realm-queue #(update-fn chat-id))))))
 
 (re-frame/reg-fx
   :save-chat
   (fn [chat]
-    (chats-store/save chat)))
+    (async/go (async/>! realm-queue #(chats-store/save chat)))))
+
+(re-frame/reg-fx
+  :delete-chat
+  (fn [{:keys [chat-id debug?]}]
+    (if debug?
+      (async/go (async/>! realm-queue #(chats-store/delete chat-id)))
+      (async/go (async/>! realm-queue #(chats-store/set-inactive chat-id))))))
 
 (re-frame/reg-fx
   :save-all-contacts
@@ -130,17 +160,18 @@
   (fn [{{:keys [current-chat-id] :as db} :db get-stored-messages :get-stored-messages} _]
     (when-not (get-in db [:chats current-chat-id :all-loaded?])
       (let [loaded-count (count (get-in db [:chats current-chat-id :messages]))
-            new-messages (get-stored-messages current-chat-id loaded-count)]
+            new-messages (index-messages (get-stored-messages current-chat-id loaded-count))]
         {:db (-> db
-                 (update-in [:chats current-chat-id :messages] merge (index-messages new-messages))
+                 (update-in [:chats current-chat-id :messages] merge new-messages)
+                 (update-in [:chats current-chat-id :not-loaded-message-ids] #(apply disj % (keys new-messages)))
                  (assoc-in [:chats current-chat-id :all-loaded?]
                            (> const/default-number-of-messages (count new-messages))))}))))
 
 (handlers/register-handler-db
-  :set-message-shown
+  :message-appeared
   [re-frame/trim-v]
   (fn [db [{:keys [chat-id message-id]}]]
-    (update-in db [:chats chat-id :messages message-id] assoc :new? false)))
+    (update-in db [:chats chat-id :messages message-id] assoc :appearing? false)))
 
 (defn init-console-chat
   [{:keys [chats] :accounts/keys [current-account-id] :as db}]
@@ -156,7 +187,6 @@
       (not current-account-id)
       (update :dispatch-n concat [[:chat-received-message/add-when-commands-loaded console-chat/intro-message1]]))))
 
-
 (handlers/register-handler-fx
   :init-console-chat
   (fn [{:keys [db]} _]
@@ -165,14 +195,18 @@
 (handlers/register-handler-fx
   :initialize-chats
   [(re-frame/inject-cofx :all-stored-chats)
+   (re-frame/inject-cofx :inactive-chat-ids)
    (re-frame/inject-cofx :get-stored-messages)
    (re-frame/inject-cofx :stored-unviewed-messages)
+   (re-frame/inject-cofx :stored-message-ids)
    (re-frame/inject-cofx :get-stored-unanswered-requests)]
   (fn [{:keys [db
                all-stored-chats
+               inactive-chat-ids
                stored-unanswered-requests
                get-stored-messages
-               stored-unviewed-messages]} _]
+               stored-unviewed-messages
+               stored-message-ids]} _]
     (let [{:accounts/keys [account-creation?]} db
           load-default-contacts-event [:load-default-contacts!]]
       (if account-creation?
@@ -183,15 +217,19 @@
                                                 {}
                                                 stored-unanswered-requests)
               chats (reduce (fn [acc {:keys [chat-id] :as chat}]
-                              (assoc acc chat-id
-                                     (assoc chat
-                                            :unviewed-messages (get stored-unviewed-messages chat-id)
-                                            :requests (get chat->message-id->request chat-id)
-                                            :messages (index-messages (get-stored-messages chat-id)))))
+                              (let [chat-messages (index-messages (get-stored-messages chat-id))]
+                                (assoc acc chat-id
+                                       (assoc chat
+                                              :unviewed-messages      (get stored-unviewed-messages chat-id)
+                                              :requests               (get chat->message-id->request chat-id)
+                                              :messages               chat-messages
+                                              :not-loaded-message-ids (set/difference (get stored-message-ids chat-id)
+                                                                                      (-> chat-messages keys set))))))
                             {}
                             all-stored-chats)]
           (-> db
-              (assoc :chats chats)
+              (assoc :chats         chats
+                     :deleted-chats inactive-chat-ids)
               init-console-chat
               (update :dispatch-n conj load-default-contacts-event)))))))
 
@@ -208,7 +246,7 @@
                :update-message {:message-id    message-id
                                 :user-statuses statuses}}
         ;; for public chats and 1-1 bot/dapp chats, it makes no sense to signalise `:seen` msg
-        (not (or public? (get-in contacts [chat-id] :dapp?)))
+        (not (or public? (get-in contacts [chat-id :dapp?])))
         (assoc :protocol-send-seen {:web3    web3
                                     :message (cond-> {:from       me
                                                       :to         from
@@ -224,6 +262,7 @@
                                    (mapv #(vector :chat-received-message/add %)))]
       {:dispatch-n messages-events})))
 
+;; TODO(alwx): can be simplified
 (handlers/register-handler-fx
   :account-generation-message
   [(re-frame/inject-cofx :get-stored-message)]
@@ -260,7 +299,7 @@
 
 (handlers/register-handler-fx
   :add-chat-loaded-event
-  [re-frame/trim-v]
+  [(re-frame/inject-cofx :get-stored-chat) re-frame/trim-v]
   (fn [{:keys [db] :as cofx} [chat-id event]]
     (if (get (:chats db) chat-id)
       {:db (assoc-in db [:chats chat-id :chat-loaded-event] event)}
@@ -270,7 +309,7 @@
 ;; TODO(janherich): remove this unnecessary event in the future (only model function `add-chat` will stay)
 (handlers/register-handler-fx
   :add-chat
-  [re-frame/trim-v]
+  [(re-frame/inject-cofx :get-stored-chat) re-frame/trim-v]
   (fn [cofx [chat-id chat-props]]
     (model/add-chat cofx chat-id chat-props)))
 
@@ -280,8 +319,8 @@
    (navigate-to-chat cofx chat-id false))
   ([cofx chat-id navigation-replace?]
    (let [nav-fn (if navigation-replace?
-                  #(navigation/navigate-to % :chat)
-                  #(navigation/replace-view % :chat))]
+                  #(navigation/replace-view % :chat)
+                  #(navigation/navigate-to % :chat))]
      (-> (preload-chat-data cofx chat-id)
          (update :db nav-fn)))))
 
@@ -293,7 +332,7 @@
 
 (handlers/register-handler-fx
   :start-chat
-  [re-frame/trim-v]
+  [(re-frame/inject-cofx :get-stored-chat) re-frame/trim-v]
   (fn [{:keys [db] :as cofx} [contact-id {:keys [navigation-replace?]}]]
     (when (not= (:current-public-key db) contact-id) ; don't allow to open chat with yourself
       (if (get (:chats db) contact-id)
@@ -307,13 +346,17 @@
 ;; TODO(janherich): remove this unnecessary event in the future (only model function `update-chat` will stay)
 (handlers/register-handler-fx
   :update-chat!
-  [(re-frame/inject-cofx :get-stored-chat) re-frame/trim-v]
+  [re-frame/trim-v]
   (fn [cofx [chat]]
     (model/update-chat cofx chat)))
 
-;; TODO(janherich): remove this unnecessary event in the future (only model function `upsert-chat` will stay)
 (handlers/register-handler-fx
-  :upsert-chat!
-  [(re-frame/inject-cofx :get-stored-chat) re-frame/trim-v]
-  (fn [cofx [chat]]
-    (model/upsert-chat cofx chat)))
+  :remove-chat
+  [re-frame/trim-v]
+  (fn [{:keys [db]} [chat-id]]
+    (let [chat (get-in db [:chats chat-id])]
+      {:db                  (-> db
+                                (update :chats dissoc chat-id)
+                                (update :deleted-chats (fnil conj #{}) chat-id))
+       :delete-chat          chat
+       :delete-chat-messages chat})))

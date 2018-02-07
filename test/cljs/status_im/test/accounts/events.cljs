@@ -16,7 +16,6 @@
    :address             "c348abf29215d3817bec65007be83a0f11d13ad6"
    :email               nil
    :signed-up?          true
-   :phone               nil
    :name                "Sleepy Serene Leopardseal"
    :updates-private-key "3849320857de8efe1e1ec57e08e92ed2bce196cb8763756ae4e6e7e011c1d857de0a115b3dc7eff066afe75a8794ea9905b"
    :updates-public-key  "384975d68aec6426faacf8b4ba2c55d5a84b70a8a26eb616e06e9c9e63f95dfdf1c1c165773e1cdca2d198a0bc5386d8a6f2079414e073b4730c8f4745292a6cdfb3fa28143ad5937128643c6addf356b66962376dc8b12274d9abfb2e1c6447ac3"
@@ -26,6 +25,7 @@
    :status              "be the hero of your own journey"
    :network             constants/default-network
    :networks            constants/default-networks
+   :wnode               constants/default-wnode
    :public-key          "0x049b3a8c04f2c5bccda91c1f5e6434ae72957e93a31c0301b4563eda1d6ce419f63c503ebaee143115f96c1f04f232a7a22ca0454e9ee3d579ad1f870315b151d0"})
 
 (def new-account
@@ -38,6 +38,7 @@
    :status              "the future starts today, not tomorrow"
    :network             constants/default-network
    :networks            constants/default-networks
+   :wnode               constants/default-wnode
    :signing-phrase      "long loan limo"
    :public-key          "0x04f5722fba79eb36d73263417531007f43d13af76c6233573a8e3e60f667710611feba0785d751b50609bfc0b7cef35448875c5392c0a91948c95798a0ce600847"})
 

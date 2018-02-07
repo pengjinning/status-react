@@ -46,7 +46,7 @@
   ::show-transaction-error
   (fn [message]
     ;; (andrey) we need this timeout because modal window conflicts with alert
-    (js/setTimeout #(utils/show-popup (i18n/label :t/transaction-failed) message) 1000)))
+    (utils/set-timeout #(utils/show-popup (i18n/label :t/transaction-failed) message) 1000)))
 
 (re-frame/reg-fx
   :discard-transaction
@@ -254,11 +254,6 @@
     {:db (update-in db [:wallet :send-transaction] assoc
                     :signing? false
                     :wrong-password? false)}))
-
-(handlers/register-handler-fx
-  :wallet.send/set-camera-dimensions
-  (fn [{:keys [db]} [_ camera-dimensions]]
-    {:db (assoc-in db [:wallet :send-transaction :camera-dimensions] camera-dimensions)}))
 
 (handlers/register-handler-fx
   :wallet.send/set-password

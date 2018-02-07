@@ -4,7 +4,6 @@
             [status-im.constants :as const]
             [status-im.i18n :as i18n]
             [status-im.chat.console :as console-chat]
-            [status-im.chat.events.sign-up :as sign-up-events]
             [status-im.ui.screens.accounts.events :as accounts-events]
             [taoensso.timbre :as log]
             [status-im.i18n :as i18n]
@@ -48,14 +47,6 @@
    (fn [{:keys [db]} {:keys [params]}]
      (accounts-events/create-account db (:password params)))
 
-   "phone"
-   (fn [{:keys [db]} {:keys [params id]}]
-     (sign-up-events/sign-up db (:phone params) id))
-
-   "confirmation-code"
-   (fn [{:keys [db]} {:keys [params id]}]
-     (sign-up-events/sign-up-confirm db (:code params) id))
-
    "faucet"
    (fn [{:keys [db random-id]} {:keys [params id]}]
      (let [{:accounts/keys [accounts current-account-id]} db
@@ -64,13 +55,13 @@
        {:http-get {:url (gstring/format faucet-url current-address)
                    :success-event-creator (fn [_]
                                             (faucet-response-event
-                                              random-id
-                                              (i18n/label :t/faucet-success)))
+                                             random-id
+                                             (i18n/label :t/faucet-success)))
                    :failure-event-creator (fn [event]
                                             (log/error "Faucet error" event)
                                             (faucet-response-event
-                                              random-id
-                                              (i18n/label :t/faucet-error)))}}))
+                                             random-id
+                                             (i18n/label :t/faucet-error)))}}))
 
    "debug"
    (fn [{:keys [db random-id now] :as cofx} {:keys [params id]}]
@@ -82,33 +73,12 @@
                                 [[:initialize-debugging {:force-start? true}]
                                  [:chat-received-message/add
                                   (console-chat/console-message
-                                    {:message-id random-id
-                                     :content (i18n/label :t/debug-enabled)
-                                     :content-type const/text-content-type})]]
+                                   {:message-id random-id
+                                    :content (i18n/label :t/debug-enabled)
+                                    :content-type const/text-content-type})]]
                                 [[:stop-debugging]])))))})
 
 (def commands-names (set (keys console-commands->fx)))
 
 (def commands-with-delivery-status
   (disj commands-names "password" "faucet" "debug"))
-
-;;;; Handlers
-
-;; TODO(janherich) remove this once send-message events are refactored
-(handlers/register-handler-fx
-  :invoke-console-command-handler!
-  [re-frame/trim-v (re-frame/inject-cofx :random-id)]
-  (fn [cofx [{:keys [chat-id command] :as command-params}]]
-    (let [fx-fn (get console-commands->fx (-> command :command :name))]
-      (-> cofx
-          (fx-fn command)
-          (update :dispatch-n (fnil conj []) [:prepare-command! chat-id command-params])))))
-
-;; TODO(janherich) remove this once send-message events are refactored
-(handlers/register-handler-fx
- :console-respond-command
- [(re-frame/inject-cofx :random-id-seq) re-frame/trim-v]
- (fn [{:keys [random-id-seq]} [command]]
-   (when-let [messages (console-respond-command-messages command random-id-seq)]
-     (let [events (mapv #(vector :chat-received-message/add %) messages)]
-       {:dispatch-n events}))))

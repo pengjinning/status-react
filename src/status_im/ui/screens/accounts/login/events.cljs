@@ -8,7 +8,9 @@
             [status-im.data-store.core :as data-store]
             [status-im.native-module.core :as status]
             [status-im.constants :refer [console-chat-id]]
-            [status-im.utils.config :as config]))
+            [status-im.utils.config :as config]
+            [status-im.utils.utils :as utils]
+            [status-im.constants :as constants]))
 
 ;;;; FX
 
@@ -31,7 +33,7 @@
     ;; if we don't add delay when running app without status-go
     ;; "null is not an object (evaluating 'realm.schema')" error appears
     (if config/stub-status-go?
-      (js/setTimeout 
+      (utils/set-timeout
         (fn []
           (data-store/change-account address new-account?
                                      #(dispatch [:change-account-handler % address new-account?])))
@@ -69,6 +71,9 @@
     {:network network
      :config  config}))
 
+(defn get-wnode-by-address [db address]
+  (get-in db [:accounts/accounts address :wnode] constants/default-wnode))
+
 (defn wrap-with-initialize-geth-fx [db address password]
   (let [{:keys [network config]} (get-network-by-address db address)]
     {:initialize-geth-fx config
@@ -91,8 +96,10 @@
   (fn [{{:keys [network status-node-started?] :as db} :db}
        [_ address password account-creation?]]
     (let [{account-network :network} (get-network-by-address db address)
+          wnode (get-wnode-by-address db address)
           db' (-> db
                   (assoc :accounts/account-creation? account-creation?)
+                  (assoc :inbox/wnode wnode)
                   (assoc-in [:accounts/login :processing] true))
           wrap-fn (cond (not status-node-started?)
                         wrap-with-initialize-geth-fx
@@ -129,8 +136,7 @@
                       [:initialize-account
                        address
                        (when (or new-account? recover-in-progress?)
-                         [[:chat-received-message/add console-chat/phone-number-request-message]
-                          [:chat-received-message/add console-chat/shake-your-phone-message]])]
+                         [[:chat-received-message/add console-chat/shake-your-phone-message]])]
                       [:navigate-to-clean :home]
                       (if new-account?
                         [:navigate-to-chat console-chat-id]

@@ -4,7 +4,7 @@
             [status-im.constants :as constants]
             [status-im.data-store.realm.messages :as data-store]
             [status-im.utils.random :as random]
-            [status-im.utils.utils :as utils]))
+            [status-im.utils.core :as utils]))
 
 (defn- command-type?
   [type]
@@ -15,9 +15,6 @@
 (def default-values
   {:outgoing       false
    :to             nil})
-
-(defn exists? [message-id]
-  (data-store/exists? message-id))
 
 (defn get-by-id
   [message-id]
@@ -33,17 +30,15 @@
                   (update message :content reader/read-string)
                   message))))))
 
+(defn get-stored-message-ids
+  []
+  (data-store/get-stored-message-ids))
+
 (defn get-log-messages
   [chat-id]
   (->> (data-store/get-by-chat-id chat-id 0 100)
        (filter #(= (:content-type %) constants/content-type-log-message))
        (map #(select-keys % [:content :timestamp]))))
-
-(defn get-last-clock-value
-  [chat-id]
-  (if-let [message (data-store/get-last-message chat-id)]
-    (:clock-value message)
-    0))
 
 (defn get-unviewed
   [current-public-key]
@@ -75,7 +70,7 @@
       prepare-statuses
       (utils/update-if-present :content prepare-content)))
 
-(defn save 
+(defn save
   [{:keys [message-id content from] :as message}]
   (when-not (data-store/exists? message-id)
     (data-store/save (prepare-message (merge default-values

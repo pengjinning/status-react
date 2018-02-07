@@ -15,7 +15,8 @@
             status-im.ui.screens.discover.db
             status-im.ui.screens.network-settings.db
             status-im.ui.screens.offline-messaging-settings.db
-            status-im.ui.screens.browser.db))
+            status-im.ui.screens.browser.db
+            status-im.ui.screens.add-new.db))
 
 (def transaction-send-default
   {:symbol    :ETH
@@ -48,6 +49,7 @@
              :network                    constants/default-network
              :networks/networks          constants/default-networks
              :inbox/wnode                constants/default-wnode
+             :inbox/wnodes               constants/default-wnodes
              :inbox/topic                constants/inbox-topic
              :inbox/password             constants/inbox-password
              :my-profile/editing?        false})
@@ -131,10 +133,12 @@
                   :node/after-start
                   :node/after-stop
                   :inbox/wnode
+                  :inbox/wnodes
                   :inbox/topic
                   :inbox/password
                   :browser/browsers
-                  :browser/options]
+                  :browser/options
+                  :new/open-dapp]
                  :opt-un
                  [::current-public-key
                   ::modal
@@ -161,6 +165,7 @@
                   :qr/qr-modal
                   :qr/current-qr-context
                   :chat/chats
+                  :chat/deleted-chats
                   :chat/current-chat-id
                   :chat/chat-id
                   :chat/new-chat
@@ -173,13 +178,13 @@
                   :chat/message-data
                   :chat/message-status
                   :chat/selected-participants
-                  :chat/chat-loaded-callbacks 
+                  :chat/chat-loaded-callbacks
                   :chat/public-group-topic
-                  :chat/confirmation-code-sms-listener
                   :chat/messages
+                  :chat/not-loaded-message-ids
+                  :chat/last-clock-value
                   :chat/loaded-chats
                   :chat/bot-db
-                  :chat/geolocation
                   :commands/access-scope->commands-responses
                   :discoveries/discoveries
                   :discoveries/discover-search-tags

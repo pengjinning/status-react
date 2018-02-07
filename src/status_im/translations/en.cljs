@@ -14,7 +14,7 @@
    :open                                  "Open"
    :description                           "Description"
    :enter-url                             "Enter URL"
-   :open-url                              "Open URL"
+   :open-dapp                             "Open ÐApp"
    :url                                   "URL"
    :type-a-message                        "Type a message..."
    :type-a-command                        "Start typing a command..."
@@ -142,6 +142,11 @@
    :phone-significant                     "Significant"
 
    ;;chats
+   :new                                   "New"
+   :new-chat                              "New chat"
+   :start-new-chat                        "Start new chat"
+   :start-group-chat                      "Start group chat"
+   :invite-friends                        "Invite friends"
    :chats                                 "Chats"
    :delete-chat                           "Delete chat"
    :new-group-chat                        "New group chat"
@@ -188,6 +193,7 @@
    :show-qr                               "Show QR code"
    :qr-code-public-key-hint               "Share this code to \nstart chatting"
    :enter-address                         "Enter address"
+   :enter-contact-code                    "Enter contact code"
    :more                                  "more"
 
    ;;group-settings
@@ -203,16 +209,6 @@
 
    ;;commands
    :chat-send-eth                         "{{amount}} ETH"
-
-   ;;location command
-   :your-current-location                 "Your current location"
-   :places-nearby                         "Places nearby"
-   :search-results                        "Search results"
-   :dropped-pin                           "Dropped pin"
-   :location                              "Location"
-   :open-map                              "Open Map"
-   :sharing-copy-to-clipboard-address     "Copy the Address"
-   :sharing-copy-to-clipboard-coordinates "Copy coordinates"
 
    ;;new-group
    :new-group                             "New group"
@@ -237,6 +233,7 @@
    :scan-qr                               "Scan QR code"
    :name                                  "Name"
    :address-explication                   "Your public key is used to generate your address on Ethereum and is a series of numbers and letters. You can find it easily in your profile"
+   :use-valid-contact-code                "Please enter a valid contact code"
    :enter-valid-public-key                "Please enter a valid public key or scan a QR code"
    :contact-already-added                 "The contact has already been added"
    :can-not-add-yourself                  "You can't add yourself"
@@ -273,6 +270,9 @@
    :unsigned-transaction-expired          "Unsigned transaction expired"
    :status                                "Status"
    :recipient                             "Recipient"
+   :specify-recipient                     "Specify recipient..."
+   :recipient-code                        "Enter recipient address"
+   :recent-recipients                     "Recent recipients"
    :to                                    "To"
    :from                                  "From"
    :data                                  "Data"
@@ -322,9 +322,10 @@
    :send-request                          "Send request"
    :share                                 "Share"
    :eth                                   "ETH"
+   :gwei                                  "Gwei"
    :currency                              "Currency"
    :usd-currency                          "USD"
-   :amount-placeholder                    "Specify amount"
+   :amount-placeholder                    "Specify amount..."
    :transactions                          "Transactions"
    :transaction-details                   "Transaction details"
    :transaction-failed                    "Transaction failed"
@@ -352,6 +353,7 @@
    :not-applicable                        "Not applicable for unsigned transactions"
    :send-transaction                      "Send transaction"
    :receive-transaction                   "Receive transaction"
+   :new-transaction                       "New Transaction"
    :transaction-history                   "Transaction History"
 
    ;; Wallet Send
@@ -367,6 +369,7 @@
    :wallet-transaction-total-fee          "Total Fee"
    :validation-amount-invalid-number      "Amount is not a valid number"
    :validation-amount-is-too-precise      "Amount is too precise. The smallest unit you can send is 1 Wei (1x10^-18 ETH)"
+   :scan-qr-code                          "Scan a QR code with a wallet address"
 
 
 
@@ -396,8 +399,10 @@
    :close-app-title                       "Warning!"
    :close-app-content                     "The app will stop and close. When you reopen it, the selected network will be used"
    :close-app-button                      "Confirm"
+   :connect-wnode-content                 "Connect to {{name}}?"
 
    ;; browser
    :browser                               "Browser"
    :enter-dapp-url                        "Enter a ÐApp URL"
-   :dapp                                  "ÐApp"})
+   :dapp                                  "ÐApp"
+   :selected-dapps                        "Selected ÐApps"})

@@ -4,12 +4,12 @@
   (:require [status-im.ui.components.react :as r]
             [re-frame.core :refer [dispatch]]
             [taoensso.timbre :as log]
-            [cljs.core.async :as async :refer [<! timeout]]
+            [cljs.core.async :as async :refer [<!]]
             [status-im.utils.js-resources :as js-res]
             [status-im.utils.platform :as p] 
             [status-im.utils.types :as types]
             [status-im.utils.transducers :as transducers]
-            [status-im.utils.async :as async-util]
+            [status-im.utils.async :as async-util :refer [timeout]]
             [status-im.react-native.js-dependencies :as rn-dependencies]
             [status-im.native-module.module :as module]
             [status-im.utils.config :as config]))
@@ -214,7 +214,7 @@
      {:jail-id  chat-id
       :path     path
       :params   params
-      :callback (or callback #(dispatch [:received-bot-response {:chat-id chat-id} %]))})))
+      :callback (or callback #(dispatch [:chat-received-message/bot-response {:chat-id chat-id} %]))})))
 
 (defn set-soft-input-mode [mode]
   (when status

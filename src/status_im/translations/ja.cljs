@@ -2,7 +2,7 @@
 
 (def translations
   {
-   ;common
+   ;;common
    :members-title                         "メンバー"
    :not-implemented                       "実装されていません"
    :chat-name                             "チャット名"
@@ -25,11 +25,11 @@
    :camera-access-error                   "必要なカメラの許可を与えるには、システム設定に行き、ステータス>カメラが選択されていることを確認してください。"
    :photos-access-error                   "必要な写真の許可を与えるには、あなたのシステム設定に行き、ステータス> 写真が選択されていることを確認してください。"
 
-   ;drawer
+   ;;drawer
    :switch-users                          "ユーザーの切り替え"
    :current-network                       "現在のネットワーク"
 
-   ;chat
+   ;;chat
    :is-typing                             "が入力中"
    :and-you                               "とあなた"
    :search-chat                           "チャットを検索"
@@ -49,11 +49,11 @@
    :faucet-success                        "フォーセットリクエストを受け取りました"
    :faucet-error                          "フォーセットリクエストエラー"
 
-   ;sync
+   ;;sync
    :sync-in-progress                      "同期中..."
    :sync-synced                           "同期しました"
 
-   ;messages
+   ;;messages
    :status-sending                        "送信中"
    :status-pending                        "保留中"
    :status-sent                           "送信済み"
@@ -62,7 +62,7 @@
    :status-delivered                      "配達済み"
    :status-failed                         "失敗しました"
 
-   ;datetime
+   ;;datetime
    :datetime-ago-format                   "{{number}} {{time-intervals}} {{ago}}"
    :datetime-second                       {:one   "秒"
                                            :other "秒"}
@@ -76,7 +76,7 @@
    :datetime-yesterday                    "昨日"
    :datetime-today                        "今日"
 
-   ;profile
+   ;;profile
    :profile                               "プロフィール"
    :edit-profile                          "プロフィールを編集"
    :message                               "メッセージ"
@@ -108,7 +108,7 @@
    :browsing-open-in-web-browser          "ブラウザーで閲覧"
    :browsing-cancel                       "キャンセル"
 
-   ;sign-up
+   ;;sign-up
    :contacts-syncronized                  "連絡先が同期されました"
    :confirmation-code                     (str "ありがとうございます！ 確認コードが記載されたメッセージが"
                                                "送信されました。電話番号を確認するにはそのコードを入力してください")
@@ -190,16 +190,6 @@
 
    ;;commands
    :chat-send-eth                         "{{amount}} ETH"
-
-   ;;location command
-   :your-current-location                 "あなたの現在の場所"
-   :places-nearby                         "近くの場所"
-   :search-results                        "検索結果"
-   :dropped-pin                           "ドロップされたピン"
-   :location                              "場所"
-   :open-map                              "地図を開く"
-   :sharing-copy-to-clipboard-address     "住所をコピーする"
-   :sharing-copy-to-clipboard-coordinates "座標をコピーする"
 
    ;;new-group
    :new-group                             "新しいグループ"

@@ -2,13 +2,13 @@
   (:require [clojure.string :as string]
             [re-frame.core :as re-frame]
             [taoensso.timbre :as log]
-            [status-im.chat.constants :as constants]
-            [status-im.chat.utils :as chat-utils]
+            [status-im.chat.constants :as constants] 
             [status-im.chat.models :as model]
             [status-im.chat.models.input :as input-model]
+            [status-im.chat.models.commands :as commands-model]
+            [status-im.chat.models.message :as message-model]
             [status-im.chat.events.commands :as commands-events]
             [status-im.chat.events.animation :as animation-events]
-            [status-im.chat.events.send-message :as send-message-events]
             [status-im.bots.events :as bots-events]
             [status-im.ui.components.react :as react-comp]
             [status-im.utils.datetime :as time]
@@ -141,15 +141,14 @@
             params  {:parameters {:args    args
                                   :bot-db  bot-db
                                   :seq-arg seq-arg}
-                     :context    (merge {:data data
-                                         :from current-account-id
-                                         :to   to}
-                                        (input-model/command-dependent-context-params current-chat-id command))}]
+                     :context    {:data data
+                                  :from current-account-id
+                                  :to   to}}]
         {:call-jail {:jail-id owner-id
                      :path    path
                      :params  params
                      :callback-events-creator (fn [jail-response]
-                                                [[:received-bot-response
+                                                [[:chat-received-message/bot-response
                                                   {:chat-id         current-chat-id
                                                    :command         command
                                                    :parameter-index parameter-index}
@@ -192,7 +191,7 @@
                                           :validation-messages nil
                                           :prev-command        name})
                 (set-chat-input-metadata metadata)
-                (set-chat-input-text (str (chat-utils/command-name command)
+                (set-chat-input-text (str (commands-model/command-name command)
                                           constants/spacing-char
                                           (when-not sequential-params
                                             (input-model/join-command-args prefill)))))
@@ -279,39 +278,28 @@
                                                                                    command-message)})))
 
 (defn proceed-command
-  "Proceed with command processing by setting up execution chain of events:
-
-   1. Command validation
-   2. Checking if command defined `onSend`
-
-  Second check is important because commands defining `onSend` are actually not
-  'sendable' and can't be treated as normal command messages, instead of actually
-  sending them, returned markup is displayed in the chat result box and command processing
-  ends there.
-  If it's normal command instead (determined by nil response to `:on-send` jail request),
-  processing continues by requesting command preview before actually sending the command
-  message."
+  "Proceed with command processing by setting up and executing chain of events:
+  1. Params validation
+  2. Preview fetching"
   [{:keys [current-chat-id chats] :as db} {{:keys [bot]} :command :as content} message-id current-time]
-  (let [params-template         {:content      content
-                                 :chat-id      current-chat-id
-                                 :group-id     (when (get-in chats [current-chat-id :group-chat])
-                                                 current-chat-id)
-                                 :jail-id      (or bot current-chat-id)
-                                 :message-id   message-id
-                                 :current-time current-time}
-        on-send-params          (merge params-template
-                                       {:data-type           :on-send
-                                        :event-after-creator (fn [_ jail-response]
-                                                               [::check-command-type
-                                                                jail-response
-                                                                params-template])})
-        after-validation-events [[::request-command-data on-send-params]]
-        validation-params       (merge params-template
-                                       {:data-type           :validator
-                                        :event-after-creator (fn [_ jail-response]
-                                                               [::proceed-validation
-                                                                jail-response
-                                                                after-validation-events])})]
+  (let [params-template   {:content      content
+                           :chat-id      current-chat-id
+                           :group-id     (when (get-in chats [current-chat-id :group-chat])
+                                           current-chat-id)
+                           :jail-id      (or bot current-chat-id)
+                           :message-id   message-id
+                           :current-time current-time}
+        preview-params    (merge params-template
+                                 {:data-type           :preview
+                                  :event-after-creator (fn [command-message jail-response]
+                                                         [::send-command
+                                                          (assoc-in command-message [:command :preview] jail-response)])})
+        validation-params (merge params-template
+                                 {:data-type           :validator
+                                  :event-after-creator (fn [_ jail-response]
+                                                         [::proceed-validation
+                                                          jail-response
+                                                          [[::request-command-data preview-params]]])})]
     (request-command-data db validation-params)))
 
 ;;;; Handlers
@@ -406,40 +394,20 @@
 
 (handlers/register-handler-fx
   ::send-command
-  [re-frame/trim-v]
-  (fn [{{:keys [current-public-key current-chat-id]
-         :accounts/keys [current-account-id] :as db} :db} [{:keys [command] :as command-message}]]
-    {:db (-> db
-             clear-seq-arguments
-             (set-chat-input-metadata nil)
-             (set-chat-input-text nil)
-             (model/set-chat-ui-props {:sending-in-progress? false}))
-     ;; TODO: refactor send-message.cljs to use atomic pure handlers and get rid of this dispatch
-     :dispatch [:check-commands-handlers! {:message (get-in db [:chats current-chat-id :input-text])
-                                           :command  command-message
-                                           :chat-id  current-chat-id
-                                           :identity current-public-key
-                                           :address  current-account-id}]}))
-
-(handlers/register-handler-fx
-  ::check-command-type
-  [re-frame/trim-v]
-  (fn [{{:keys [current-chat-id] :as db} :db} [on-send-jail-response params-template]]
-    (if on-send-jail-response
-      ;; `onSend` is defined, we have non-sendable command here, like `@browse`
-      {:db (-> db
-               (model/set-chat-ui-props {:result-box           on-send-jail-response
-                                         :sending-in-progress? false})
-               (animation-events/choose-predefined-expandable-height :result-box :max))
-       ::dismiss-keyboard nil}
-      ;; regular command message, we need to fetch preview before sending the command message
-      (request-command-data
-       db
-       (merge params-template
-              {:data-type           :preview
-               :event-after-creator (fn [command-message returned]
-                                      [::send-command (assoc-in command-message
-                                                                [:command :preview] returned)])})))))
+  message-model/send-interceptors
+  (fn [cofx [{:keys [command] :as command-message}]]
+    (let [{{:keys          [current-public-key current-chat-id]
+            :accounts/keys [current-account-id] :as db} :db} cofx
+          fx (message-model/process-command cofx
+                                            {:message  (get-in db [:chats current-chat-id :input-text])
+                                             :command  command-message
+                                             :chat-id  current-chat-id
+                                             :identity current-public-key
+                                             :address  current-account-id})]
+      (update fx :db #(-> %
+                          (clear-seq-arguments)
+                          (set-chat-input-metadata nil)
+                          (set-chat-input-text nil))))))
 
 (defn command-complete?
   [chat-command]
@@ -464,19 +432,18 @@
   "no command detected, when not empty, proceed by sending text message without command processing"
   [db cofx input-text current-chat-id current-public-key]
   (when-not (string/blank? input-text)
-    (send-message-events/prepare-message (assoc cofx :db (-> db
-                                                             (set-chat-input-metadata nil)
-                                                             (set-chat-input-text nil)))
-                                         {:message-text  input-text
-                                          :chat-id       current-chat-id
-                                          :identity      current-public-key
-                                          :address       (:accounts/current-account-id db)})))
+    (message-model/send-message (assoc cofx :db (-> db
+                                                    (set-chat-input-metadata nil)
+                                                    (set-chat-input-text nil)))
+                                {:message-text input-text
+                                 :chat-id      current-chat-id
+                                 :identity     current-public-key
+                                 :address      (:accounts/current-account-id db)})))
+
 
 (handlers/register-handler-fx
   :send-current-message
-  [(re-frame/inject-cofx :random-id)
-   (re-frame/inject-cofx :get-last-clock-value)
-   (re-frame/inject-cofx :get-stored-chat)]
+  message-model/send-interceptors 
   (fn [{{:keys [current-chat-id current-public-key] :as db} :db message-id :random-id current-time :now
         :as cofx} _]
     (when-not (get-in db [:chat-ui-props current-chat-id :sending-in-progress?])

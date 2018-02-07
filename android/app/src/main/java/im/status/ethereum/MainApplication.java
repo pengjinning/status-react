@@ -5,10 +5,9 @@ import com.BV.LinearGradient.LinearGradientPackage;
 import com.aakashns.reactnativedialogs.ReactNativeDialogsPackage;
 import com.bitgo.randombytes.RandomBytesPackage;
 import org.devio.rn.splashscreen.SplashScreenReactPackage;
-import com.centaurwarchief.smslistener.SmsListenerPackage;
 import com.facebook.react.ReactApplication;
+import com.ocetnik.timer.BackgroundTimerPackage;
 import com.horcrux.svg.SvgPackage;
-import com.mapbox.reactnativemapboxgl.ReactNativeMapboxGLPackage;
 import com.evollu.react.fcm.FIRMessagingPackage;
 import com.lugg.ReactNativeConfig.ReactNativeConfigPackage;
 import com.facebook.react.ReactNativeHost;
@@ -23,7 +22,6 @@ import com.lwansbrough.RCTCamera.RCTCameraPackage;
 import com.oblador.vectoricons.VectorIconsPackage;
 import com.reactnative.ivpusic.imagepicker.PickerPackage;
 import com.rnfs.RNFSPackage;
-import com.rt2zz.reactnativecontacts.ReactNativeContacts;
 import es.tiarg.nfcreactnative.NfcReactNativePackage;
 import fr.bamlab.rnimageresizer.ImageResizerPackage;
 import im.status.ethereum.module.StatusPackage;
@@ -59,8 +57,8 @@ public class MainApplication extends MultiDexApplication implements ReactApplica
             Function<String, String> callRPC = statusPackage.getCallRPC();
             List<ReactPackage> packages = new ArrayList<ReactPackage>(Arrays.asList(
                     new MainReactPackage(),
+                    new BackgroundTimerPackage(),
                     new SvgPackage(),
-                    new ReactNativeMapboxGLPackage(),
                     new FIRMessagingPackage(),
                     new HttpServerReactPackage(),
                     new NfcReactNativePackage(),
@@ -68,12 +66,10 @@ public class MainApplication extends MultiDexApplication implements ReactApplica
                     statusPackage,
                     new RealmReactPackage(),
                     new VectorIconsPackage(),
-                    new ReactNativeContacts(),
                     new RNI18nPackage(),
                     new RandomBytesPackage(),
                     new LinearGradientPackage(),
                     new RCTCameraPackage(),
-                    new SmsListenerPackage(),
                     new OrientationPackage(),
                     new RNFSPackage(),
                     new ReactNativeDialogsPackage(),

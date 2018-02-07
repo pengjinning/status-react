@@ -1,5 +1,6 @@
 (ns status-im.protocol.handlers
   (:require [re-frame.core :as re-frame]
+            [cljs.core.async :as async]
             [status-im.utils.handlers :as handlers]
             [status-im.data-store.contacts :as contacts]
             [status-im.data-store.messages :as messages]
@@ -10,14 +11,14 @@
             [status-im.constants :as constants]
             [status-im.i18n :as i18n]
             [status-im.utils.random :as random]
+            [status-im.utils.async :as async-utils]
             [status-im.protocol.message-cache :as cache]
             [status-im.protocol.listeners :as listeners]
-            [status-im.chat.utils :as chat.utils]
+            [status-im.chat.models.message :as models.message]
             [status-im.protocol.web3.inbox :as inbox]
             [status-im.protocol.web3.keys :as web3.keys]
             [status-im.utils.datetime :as datetime]
-            [status-im.utils.events-buffer :as events-buffer]
-            [taoensso.timbre :as log :refer-macros [debug]]
+            [taoensso.timbre :as log]
             [status-im.native-module.core :as status]
             [clojure.string :as string]
             [status-im.utils.web3-provider :as web3-provider]
@@ -39,11 +40,6 @@
   ::get-pending-messages
   (fn [coeffects _]
     (assoc coeffects :pending-messages (pending-messages/get-all))))
-
-(re-frame/reg-cofx
-  ::get-all-contacts
-  (fn [coeffects _]
-    (assoc coeffects :contacts (contacts/get-all))))
 
 (re-frame/reg-cofx
   ::message-get-by-id
@@ -74,6 +70,8 @@
 
 ;;;; FX
 
+(def ^:private protocol-realm-queue (async-utils/task-queue 2000))
+
 (re-frame/reg-fx
   :stop-whisper
   (fn [] (protocol/stop-whisper!)))
@@ -85,7 +83,7 @@
      {:web3                        web3
       :identity                    public-key
       :groups                      groups
-      :callback                    #(events-buffer/dispatch [:incoming-message %1 %2])
+      :callback                    #(re-frame/dispatch [:incoming-message %1 %2])
       :ack-not-received-s-interval 125
       :default-ttl                 120
       :send-online-s-interval      180
@@ -118,7 +116,7 @@
 (re-frame/reg-fx
   ::save-processed-messages
   (fn [processed-message]
-    (processed-messages/save processed-message)))
+    (async/go (async/>! protocol-realm-queue #(processed-messages/save processed-message)))))
 
 (defn system-message [message-id timestamp content]
   {:from         "system"
@@ -198,12 +196,12 @@
 (re-frame/reg-fx
   ::pending-messages-delete
   (fn [message-id]
-    (pending-messages/delete message-id)))
+    (async/go (async/>! protocol-realm-queue #(pending-messages/delete message-id)))))
 
 (re-frame/reg-fx
   ::pending-messages-save
   (fn [pending-message]
-    (pending-messages/save pending-message)))
+    (async/go (async/>! protocol-realm-queue #(pending-messages/save pending-message)))))
 
 (re-frame/reg-fx
   ::status-init-jail
@@ -226,10 +224,27 @@
                    #(re-frame/dispatch [::add-peer-error %]))))
 
 (re-frame/reg-fx
+ ::fetch-peers
+ (fn [{:keys [wnode web3 retries]}]
+   ;; Run immediately on first run, add delay before retry
+   (let [delay (cond
+                 (zero? retries) 0
+                 (< retries 3)   300
+                 (< retries 10)  1000
+                 :else           5000)]
+     (if (> retries 100)
+       (log/error "Number of retries for fetching peers exceed" wnode)
+       (js/setTimeout
+        (fn [] (inbox/fetch-peers #(re-frame/dispatch [::fetch-peers-success web3 % retries])
+                                 #(re-frame/dispatch [::fetch-peers-error %])))
+        delay)))))
+
+(re-frame/reg-fx
  ::mark-trusted-peer
- (fn [{:keys [wnode web3]}]
+ (fn [{:keys [wnode web3 peers]}]
    (inbox/mark-trusted-peer web3
                             wnode
+                            peers
                             #(re-frame/dispatch [::mark-trusted-peer-success web3 %])
                             #(re-frame/dispatch [::mark-trusted-peer-error %]))))
 
@@ -258,27 +273,47 @@
 ;;;; Handlers
 
 ;; NOTE(dmitryn): events chain
-;; add-peeer -> mark-trusted-peer -> get-sym-key -> request-messages
+;; add-peer -> fetch-peers -> mark-trusted-peer -> get-sym-key -> request-messages
 (handlers/register-handler-fx
  :initialize-offline-inbox
  (fn [{:keys [db]} [_ web3]]
    (log/info "offline inbox: initialize")
-   (let [wnode (get-in db [:inbox/wnode :address])]
+   (let [wnode-id (get db :inbox/wnode)
+         wnode    (get-in db [:inbox/wnodes wnode-id :address])]
      {::add-peer {:wnode wnode
                   :web3  web3}})))
 
 (handlers/register-handler-fx
  ::add-peer-success
  (fn [{:keys [db]} [_ web3 response]]
-   (let [wnode (get-in db [:inbox/wnode :address])]
+   (let [wnode-id (get db :inbox/wnode)
+         wnode    (get-in db [:inbox/wnodes wnode-id :address])]
      (log/info "offline inbox: add-peer response" wnode response)
-     {::mark-trusted-peer {:wnode wnode
-                           :web3  web3}})))
+     {::fetch-peers {:wnode wnode
+                     :web3  web3
+                     :retries 0}})))
+
+(handlers/register-handler-fx
+ ::fetch-peers-success
+ (fn [{:keys [db]} [_ web3 peers retries]]
+   (let [wnode-id (get db :inbox/wnode)
+         wnode    (get-in db [:inbox/wnodes wnode-id :address])]
+     (log/info "offline inbox: fetch-peers response" peers)
+     (if (inbox/registered-peer? peers wnode)
+       {::mark-trusted-peer {:wnode wnode
+                             :web3  web3
+                             :peers peers}}
+       (do
+         (log/info "Peer" wnode "is not registered. Retrying fetch peers.")
+         {::fetch-peers {:wnode   wnode
+                         :web3    web3
+                         :retries (inc retries)}})))))
 
 (handlers/register-handler-fx
  ::mark-trusted-peer-success
  (fn [{:keys [db]} [_ web3 response]]
-   (let [wnode    (get-in db [:inbox/wnode :address])
+   (let [wnode-id (get db :inbox/wnode)
+         wnode    (get-in db [:inbox/wnodes wnode-id :address])
          password (:inbox/password db)]
      (log/info "offline inbox: mark-trusted-peer response" wnode response)
      {::get-sym-key {:password password
@@ -290,8 +325,9 @@
  ::get-sym-key-success
  (fn [{:keys [db]} [_ web3 sym-key-id]]
    (log/info "offline inbox: get-sym-key response" sym-key-id)
-   (let [wnode (get-in db [:inbox/wnode :address])
-         topic (:inbox/topic db)]
+   (let [wnode-id (get db :inbox/wnode)
+         wnode    (get-in db [:inbox/wnodes wnode-id :address])
+         topic    (:inbox/topic db)]
      {::request-messages {:wnode      wnode
                           :topic      topic
                           :sym-key-id sym-key-id
@@ -306,6 +342,11 @@
  ::add-peer-error
  (fn [_ [_ error]]
    (log/error "offline inbox: add-peer error" error)))
+
+(handlers/register-handler-fx
+ ::fetch-peers-error
+ (fn [_ [_ error]]
+   (log/error "offline inbox: fetch-peers error" error)))
 
 (handlers/register-handler-fx
  ::mark-trusted-peer-error
@@ -336,15 +377,15 @@
    (re-frame/inject-cofx ::get-web3)
    (re-frame/inject-cofx ::get-chat-groups)
    (re-frame/inject-cofx ::get-pending-messages)
-   (re-frame/inject-cofx ::get-all-contacts)]
-  (fn [{:keys [db web3 groups contacts pending-messages]} [current-account-id ethereum-rpc-url]]
+   (re-frame/inject-cofx :get-all-contacts)]
+  (fn [{:keys [db web3 groups all-contacts pending-messages]} [current-account-id ethereum-rpc-url]]
     (let [{:keys [public-key status updates-public-key
                   updates-private-key]}
           (get-in db [:accounts/accounts current-account-id])]
       (when public-key
         {::init-whisper {:web3 web3 :public-key public-key :groups groups :pending-messages pending-messages
                          :updates-public-key updates-public-key :updates-private-key updates-private-key
-                         :status status :contacts contacts}
+                         :status status :contacts all-contacts}
          :db (assoc db :web3 web3
                        :rpc-url (or ethereum-rpc-url constants/ethereum-rpc-url))}))))
 
@@ -395,7 +436,7 @@
 (defn- transform-protocol-message [{:keys [from to payload]}]
   (merge payload {:from    from
                   :to      to
-                  :chat-id from}))
+                  :chat-id (or (:group-id payload) from)}))
 
 (defn- message-from-self [{:keys [current-public-key]} {:keys [id to group-id]}]
   {:from      to
@@ -407,7 +448,7 @@
   (or ack-of-message message-id))
 
 (handlers/register-handler-fx
-  :incoming-message 
+  :incoming-message
   (fn [{:keys [db]} [_ type {:keys [payload ttl id] :as message}]]
     (let [message-id (or id (:message-id payload))]
       (when-not (cache/exists? message-id type)
@@ -441,9 +482,9 @@
                          :discoveries-response   {:dispatch [:discoveries-response-received message]}
                          :profile                {:dispatch [:contact-update-received message]}
                          :update-keys            {:dispatch [:update-keys-received message]}
-                         :online                 {:dispatch [:contact-online-received message]} 
+                         :online                 {:dispatch [:contact-online-received message]}
                          nil)]
-          (when (nil? route-fx) (debug "Unknown message type" type))
+          (when (nil? route-fx) (log/debug "Unknown message type" type))
           (cache/add! processed-message)
           (merge
             {::save-processed-messages processed-message}
@@ -455,16 +496,19 @@
   (fn [{:keys [db get-stored-message]} [{:keys [from sent-from payload]} status]]
     (let [message-identifier (get-message-id payload)
           chat-identifier    (or (:group-id payload) from)
-          message-db-path    [:chats chat-identifier :messages message-identifier] 
-          from-id            (or sent-from from) 
-          message            (get-stored-message message-identifier)]
-      ;; proceed with updating status if chat is in db, status is not the same and message was not already seen 
-      (when (and (get-in db [:chats chat-identifier])
+          message-db-path    [:chats chat-identifier :messages message-identifier]
+          from-id            (or sent-from from)
+          message            (or (get-in db message-db-path)
+                                 (and (get (:not-loaded-message-ids db) message-identifier)
+                                      (get-stored-message message-identifier)))]
+      ;; proceed with updating status if chat is in db, status is not the same and message was not already seen
+      (when (and message
+                 (get-in db [:chats chat-identifier])
                  (not= status (get-in message [:user-statuses from-id]))
-                 (not (chat.utils/message-seen-by? message from-id)))
+                 (not (models.message/message-seen-by? message from-id)))
         (let [statuses (assoc (:user-statuses message) from-id status)]
           (cond-> {:update-message {:message-id    message-identifier
-                                    :user-statuses statuses}} 
+                                    :user-statuses statuses}}
             (get-in db message-db-path)
             (assoc :db (assoc-in db (conj message-db-path :user-statuses) statuses))))))))
 
@@ -493,7 +537,6 @@
             ;; Root level "timestamp" is a unix ts in seconds.
             timestamp'        (or (:payload timestamp)
                                   (* 1000 timestamp))]
-
         (if-not existing-contact
           (let [contact (assoc contact :pending? true)]
             {:dispatch-n [[:add-contacts [contact]]
@@ -501,7 +544,7 @@
           (when-not (:pending? existing-contact)
             (cond-> {:dispatch-n [[:update-chat! chat]
                                   [:watch-contact contact]]}
-                (<= prev-last-updated timestamp') (update :dispatch-n concat [[:update-contact! contact]]))))))))
+              (<= prev-last-updated timestamp') (update :dispatch-n concat [[:update-contact! contact]]))))))))
 
 ;;GROUP
 

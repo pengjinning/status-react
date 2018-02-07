@@ -13,7 +13,7 @@
             [status-im.utils.gfycat.core :as gfycat]
             [status-im.utils.handlers :as handlers]
             [status-im.utils.image-processing :refer [img->base64]]
-            [status-im.utils.utils :as utils]
+            [status-im.utils.core :as utils]
             [taoensso.timbre :as log]))
 
 (re-frame/reg-fx
@@ -44,16 +44,6 @@
   (fn [_ [_ identity]]
     (when identity
       {:dispatch [:navigation-replace :chat identity]})))
-
-(handlers/register-handler-fx
-  :my-profile/update-phone-number
-  ;; Switch user to the console issuing the !phone command automatically to let him change his phone number.
-  ;; We allow to change phone number only from console because this requires entering SMS verification code.
-  (fn [{{:contacts/keys [contacts] :as db} :db :as cofx} _]
-    (let [phone-command (get-in contacts chat-const/phone-command-ref)]
-      (-> (chat-events/navigate-to-chat cofx const/console-chat-id)
-          (as-> fx
-              (merge fx (input-events/select-chat-input-command (:db fx) phone-command nil true)))))))
 
 (defn get-current-account [{:keys [:accounts/current-account-id] :as db}]
   (get-in db [:accounts/accounts current-account-id]))

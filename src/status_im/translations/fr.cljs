@@ -62,7 +62,7 @@
    :status-delivered                      "Délivré"
    :status-failed                         "Échec"
 
-   ;datetime
+   ;;datetime
    :datetime-ago-format                   "{{number}} {{time-intervals}} {{ago}}"
    :datetime-second                       {:one   "seconde"
                                            :other "secondes"}
@@ -191,16 +191,6 @@
 
    ;;commands
    :chat-send-eth                         "{{amount}} ETH"
-
-   ;;location command
-   :your-current-location                 "Votre localisation actuelle"
-   :places-nearby                         "Endroits proches"
-   :search-results                        "Résultats de recherche"
-   :dropped-pin                           "Repère placé"
-   :location                              "Localisation"
-   :open-map                              "Ouvrir la carte"
-   :sharing-copy-to-clipboard-address     "Copier l'adresse"
-   :sharing-copy-to-clipboard-coordinates "Copier les coordonnées"
 
    ;;new-group
    :new-group                             "Nouveau groupe"

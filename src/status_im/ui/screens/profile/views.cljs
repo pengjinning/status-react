@@ -19,6 +19,7 @@
             [status-im.ui.screens.profile.styles :as styles]
             [status-im.ui.components.colors :as colors]
             [status-im.utils.utils :as utils]
+            [status-im.utils.core :refer [hash-tag?]]
             [status-im.utils.datetime :as time]
             [status-im.utils.config :as config]
             [status-im.utils.platform :as platform]
@@ -41,8 +42,8 @@
   [toolbar/toolbar {}
    nil
    [toolbar/content-title ""]
-     [common/icon-or-label {:on-press #(re-frame/dispatch [:my-profile/save-profile])}
-      :t/done {} :icons/ok {:color colors/blue}]])
+   [common/icon-or-label {:on-press #(re-frame/dispatch [:my-profile/save-profile])}
+    :t/done {} :icons/ok {:color colors/blue}]])
 
 (defn profile-toolbar [contact]
   [toolbar/toolbar {}
@@ -51,8 +52,8 @@
    [toolbar/actions
     (when (and (not (:pending? contact))
                (not (:unremovable? contact)))
-      [(actions/opts [{:value #(re-frame/dispatch [:hide-contact contact])
-                       :text  (i18n/label :t/remove-from-contacts)}])])]])
+      [(actions/opts [{:action #(re-frame/dispatch [:hide-contact contact])
+                       :label  (i18n/label :t/remove-from-contacts)}])])]])
 
 (defn online-text [last-online]
   (let [last-online-date (time/to-date last-online)
@@ -87,27 +88,24 @@
      :on-change-text #(re-frame/dispatch [:my-profile/update-name %])}]])
 
 (def profile-icon-options
-  [{:text  (i18n/label :t/image-source-gallery)
-    :value #(re-frame/dispatch [:my-profile/update-picture])}
-   {:text  (i18n/label :t/image-source-make-photo)
-    :value (fn []
-             (re-frame/dispatch [:request-permissions
-                        [:camera :write-external-storage]
-                        (fn []
-                          (camera/request-access
-                            #(if %
-                               (re-frame/dispatch [:navigate-to :profile-photo-capture])
-                               (utils/show-popup (i18n/label :t/error)
-                                                 (i18n/label :t/camera-access-error)))))]))}])
+  [{:label  (i18n/label :t/image-source-gallery)
+    :action #(re-frame/dispatch [:my-profile/update-picture])}
+   {:label  (i18n/label :t/image-source-make-photo)
+    :action (fn []
+              (re-frame/dispatch [:request-permissions
+                                  [:camera :write-external-storage]
+                                  #(re-frame/dispatch [:navigate-to :profile-photo-capture])
+                                  #(utils/show-popup (i18n/label :t/error)
+                                                     (i18n/label :t/camera-access-error))]))}])
+
 
 (defn profile-badge-edit [{:keys [name last-online] :as account}]
   [react/view styles/profile-badge-edit
-   [context-menu/modal-menu
-    [chat-icon.screen/my-profile-icon {:account account
-                                       :edit?   true}]
-    styles/modal-menu
-    (i18n/label :t/image-source-title)
-    profile-icon-options]
+   [react/touchable-highlight {:on-press #(list-selection/show {:title   (i18n/label :t/image-source-title)
+                                                                :options profile-icon-options})}
+    [react/view styles/modal-menu
+     [chat-icon.screen/my-profile-icon {:account account
+                                        :edit?   true}]]]
    [react/view styles/profile-badge-name-container
     [profile-name-input name]
     (when-not (nil? last-online)
@@ -163,15 +161,15 @@
 
 (defn profile-options [contact k text]
   (into []
-        (concat [{:value (show-qr contact k text)
-                  :text  (i18n/label :t/show-qr)}]
+        (concat [{:action (show-qr contact k text)
+                  :label  (i18n/label :t/show-qr)}]
                 (when text
                   (list-selection/share-options text)))))
 
 (defn profile-info-address-item [{:keys [address] :as contact}]
   [profile-info-item
    {:label               (i18n/label :t/address)
-    :value               address
+    :action              address
     :options             (profile-options contact :address address)
     :text-mode           :middle
     :accessibility-label :profile-address}])
@@ -179,7 +177,7 @@
 (defn profile-info-public-key-item [public-key contact]
   [profile-info-item
    {:label               (i18n/label :t/public-key)
-    :value               public-key
+    :action              public-key
     :options             (profile-options contact :public-key public-key)
     :text-mode           :middle
     :accessibility-label :profile-public-key}])
@@ -194,22 +192,11 @@
 
 (defn colorize-status-hashtags [status]
   (for [[i status] (map-indexed vector (string/split status #" "))]
-    (if (utils/hash-tag? status)
+    (if (hash-tag? status)
       ^{:key (str "item-" i)}
       [tag-view status]
       ^{:key (str "item-" i)}
       (str status " "))))
-
-(defn profile-info-phone-item [phone & [options]]
-  (let [phone-empty? (or (nil? phone) (string/blank? phone))
-        phone-text   (if phone-empty?
-                       (i18n/label :t/not-specified)
-                       phone)]
-    [profile-info-item {:label               (i18n/label :t/phone-number)
-                        :value               phone-text
-                        :options             options
-                        :empty-value?        phone-empty?
-                        :accessibility-label :profile-phone-number}]))
 
 (defn settings-title [title]
   [react/text {:style styles/profile-settings-title}
@@ -227,13 +214,11 @@
     (when active?
       [vector-icons/icon :icons/forward {:color colors/gray}])]])
 
-(defn profile-info [{:keys [whisper-identity phone] :as contact}]
+(defn profile-info [{:keys [whisper-identity] :as contact}]
   [react/view
    [profile-info-address-item contact]
    [settings-item-separator]
-   [profile-info-public-key-item whisper-identity contact]
-   [settings-item-separator]
-   [profile-info-phone-item phone]])
+   [profile-info-public-key-item whisper-identity contact]])
 
 (defn navigate-to-accounts []
   ;; TODO(rasom): probably not the best place for this call

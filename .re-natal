@@ -12,8 +12,6 @@
     }
   },
   "modules": [
-    "react-native-contacts",
-    "awesome-phonenumber",
     "realm",
     "react-native-i18n",
     "realm/react-native",
@@ -24,7 +22,6 @@
     "dismissKeyboard",
     "react-native-linear-gradient",
     "react-native-splash-screen",
-    "react-native-android-sms-listener",
     "react-native-status",
     "react-native-camera",
     "react-native-qrcode",
@@ -48,14 +45,14 @@
     "nfc-react-native",
     "react-native-http-bridge",
     "emojilib",
-    "react-native-mapbox-gl",
     "react-native-config",
     "react-native-svg",
     "rn-snoopy",
     "rn-snoopy/stream/bars",
     "rn-snoopy/stream/filter",
     "rn-snoopy/stream/buffer",
-    "react-native/Libraries/vendor/emitter/EventEmitter"
+    "react-native/Libraries/vendor/emitter/EventEmitter",
+    "react-native-background-timer"
   ],
   "imageDirs": [
     "resources/images"

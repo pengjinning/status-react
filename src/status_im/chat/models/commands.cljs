@@ -1,6 +1,5 @@
 (ns status-im.chat.models.commands
   (:require [status-im.chat.constants :as chat-consts]
-            [status-im.bots.constants :as bots-constants]
             [clojure.string :as str]
             [taoensso.timbre :as log]))
 
@@ -13,6 +12,9 @@
 
 (defn- is-dapp? [all-contacts {:keys [identity]}]
   (get-in all-contacts [identity :dapp?]))
+
+(defn command-name [{:keys [name]}]
+  (str chat-consts/command-char name))
 
 (defn commands-responses
   "Returns map of commands/responses eligible for current chat."

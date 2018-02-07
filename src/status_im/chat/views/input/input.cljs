@@ -6,8 +6,8 @@
             [taoensso.timbre :as log]
             [status-im.chat.constants :as const]
             [status-im.chat.models.input :as input-model]
-            [status-im.chat.styles.input.input :as style]
-            [status-im.chat.utils :as chat-utils]
+            [status-im.chat.models.commands :as commands-model]
+            [status-im.chat.styles.input.input :as style] 
             [status-im.chat.views.input.emoji :as emoji]
             [status-im.chat.views.input.parameter-box :as parameter-box]
             [status-im.chat.views.input.input-actions :as input-actions]
@@ -18,14 +18,15 @@
             [status-im.ui.components.react :as react]
             [status-im.ui.components.icons.vector-icons :as vi]
             [status-im.i18n :as i18n]
-            [status-im.utils.platform :as platform]))
+            [status-im.utils.platform :as platform]
+            [status-im.utils.utils :as utils]))
 
 (defn command-view [first? command]
   [react/touchable-highlight {:on-press #(dispatch [:select-chat-input-command command nil])}
    [react/view
     [react/text {:style (style/command first?)
                  :font  :roboto-mono}
-     (chat-utils/command-name command)]]])
+     (commands-model/command-name command)]]])
 
 (defview commands-view []
   [all-commands-responses [:get-available-commands-responses]
@@ -88,8 +89,8 @@
                                                (.-height))]
                                      (set-layout-height-fn h)))
         :on-selection-change    #(let [s   (-> (.-nativeEvent %)
-                                               (.-selection)) 
-                                       end (.-end s)] 
+                                               (.-selection))
+                                       end (.-end s)]
                                    (dispatch [:update-text-selection end]))
         :style                  (style/input-view height single-line-input?)
         :placeholder-text-color style/color-input-helper-placeholder
@@ -162,7 +163,7 @@
                                                            (when-not (or (str/blank? @seq-arg-input-text)
                                                                          (get-in @command [:command :hide-send-button]))
                                                              (dispatch [:send-seq-argument]))
-                                                           (js/setTimeout
+                                                           (utils/set-timeout
                                                              #(dispatch [:chat-input-focus :seq-input-ref])
                                                              100))}
                                    (get-options type))])))))
@@ -228,7 +229,7 @@
                                                     (do
                                                       (when-not (str/blank? seq-arg-input-text)
                                                         (dispatch [:send-seq-argument]))
-                                                      (js/setTimeout
+                                                      (utils/set-timeout
                                                         (fn [] (dispatch [:chat-input-focus :seq-input-ref]))
                                                         100))
                                                     (dispatch [:send-current-message]))}

@@ -23,6 +23,8 @@
             status-im.ui.screens.wallet.transactions.events
             status-im.ui.screens.wallet.choose-recipient.events
             status-im.ui.screens.browser.events
+            status-im.ui.screens.add-new.open-dapp.events
+            status-im.ui.screens.offline-messaging-settings.events
             [re-frame.core :as re-frame]
             [status-im.native-module.core :as status]
             [status-im.ui.components.react :as react]
@@ -57,7 +59,7 @@
       :callback (fn [jail-response]
                   (doseq [event (if callback-events-creator
                                   (callback-events-creator jail-response)
-                                  [[:received-bot-response
+                                  [[:chat-received-message/bot-response
                                     {:chat-id chat-id}
                                     jail-response]])
                           :when event]
@@ -66,21 +68,21 @@
 ;;;; COFX
 
 (re-frame/reg-cofx
-  :now
-  (fn [coeffects _]
-    (assoc coeffects :now (time/now-ms))))
+ :now
+ (fn [coeffects _]
+   (assoc coeffects :now (time/now-ms))))
 
 (re-frame/reg-cofx
-  :random-id
-  (fn [coeffects _]
-    (assoc coeffects :random-id (random/id))))
+ :random-id
+ (fn [coeffects _]
+   (assoc coeffects :random-id (random/id))))
 
 (re-frame/reg-cofx
-  :random-id-seq
-  (fn [coeffects _]
-    (assoc coeffects :random-id-seq
-           ((fn rand-id-seq []
-              (cons (random/id) (lazy-seq (rand-id-seq))))))))
+ :random-id-seq
+ (fn [coeffects _]
+   (assoc coeffects :random-id-seq
+          ((fn rand-id-seq []
+             (cons (random/id) (lazy-seq (rand-id-seq))))))))
 
 ;;;; FX
 
@@ -92,8 +94,9 @@
          (dissoc :callback-events-creator)
          (assoc :callback
                 (fn [jail-response]
-                  (doseq [event (callback-events-creator jail-response)]
-                    (re-frame/dispatch event))))))))
+                  (when callback-events-creator
+                    (doseq [event (callback-events-creator jail-response)]
+                      (re-frame/dispatch event)))))))))
 
 (re-frame/reg-fx
   :call-jail-function
@@ -248,8 +251,10 @@
   (fn [{:keys [accounts/accounts contacts/contacts networks/networks
                network network-status view-id navigation-stack chats
                access-scope->commands-responses layout-height
-               status-module-initialized? status-node-started?]
-        :or [network (get app-db :network)]
+               status-module-initialized? status-node-started?
+               inbox/wnode]
+        :or [network (get app-db :network)
+             wnode   (get app-db :inbox/wnode)]
         :as db} [_ address]]
     (let [console-contact (get contacts console-chat-id)]
       (cond-> (assoc app-db
@@ -268,7 +273,8 @@
                      :accounts/creating-account? false
                      :networks/networks networks
                      :network-status network-status
-                     :network network)
+                     :network network
+                     :inbox/wnode wnode)
         console-contact
         (assoc :contacts/contacts {console-chat-id console-contact})))))
 
@@ -349,8 +355,8 @@
                                                               :data    data}])
       "show-suggestions" (re-frame/dispatch [:show-suggestions-from-jail {:chat-id chat_id
                                                                           :markup  data}])
-      "send-message" (re-frame/dispatch [:send-message-from-jail {:chat-id chat_id
-                                                                  :message data}])
+      "send-message" (re-frame/dispatch [:chat-send-message/from-jail {:chat-id chat_id
+                                                                       :message data}])
       "handler-result" (let [orig-params (:origParams data)]
                          ;; TODO(janherich): figure out and fix chat_id from event
                          (re-frame/dispatch [:command-handler! (:chat-id orig-params)
@@ -370,8 +376,6 @@
         "node.started"            (re-frame/dispatch [:status-node-started])
         "node.stopped"            (re-frame/dispatch [:status-node-stopped])
         "module.initialized"      (re-frame/dispatch [:status-module-initialized])
-        "request_geo_permissions" (re-frame/dispatch [:request-permissions [:geolocation]
-                                                      #(re-frame/dispatch [:webview-geo-permissions-granted])])
         "jail.signal"             (handle-jail-signal event)
         (log/debug "Event " type " not handled")))))
 
@@ -398,34 +402,7 @@
 ;; TODO(rasom): let's not remove this handler, it will be used for
 ;; pausing node on entering background on android
 
-
 (handlers/register-handler-fx
   :request-permissions
   (fn [_ [_ permissions then else]]
     {::request-permissions-fx [permissions then else]}))
-
-(handlers/register-handler-fx
-  :request-geolocation-update
-  (fn [_ _]
-    {:dispatch [:request-permissions [:geolocation]
-                (fn []
-                  (let [watch-id (atom nil)]
-                    (.getCurrentPosition
-                      react/geolocation
-                      #(re-frame/dispatch [:update-geolocation (js->clj % :keywordize-keys true)])
-                      #(re-frame/dispatch [:update-geolocation (js->clj % :keywordize-keys true)])
-                      (clj->js {:enableHighAccuracy true :timeout 20000 :maximumAge 1000}))
-                    (when platform/android?
-                      (reset! watch-id
-                              (.watchPosition
-                                react/geolocation
-                                #(do
-                                   (.clearWatch
-                                     react/geolocation
-                                     @watch-id)
-                                   (re-frame/dispatch [:update-geolocation (js->clj % :keywordize-keys true)])))))))]}))
-
-(handlers/register-handler-db
-  :update-geolocation
-  (fn [db [_ geolocation]]
-    (assoc db :geolocation geolocation)))

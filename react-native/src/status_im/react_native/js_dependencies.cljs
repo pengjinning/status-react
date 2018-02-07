@@ -1,12 +1,9 @@
 (ns status-im.react-native.js-dependencies)
 
 (def action-button          (js/require "react-native-action-button"))
-(def android-sms-listener   (js/require "react-native-android-sms-listener"))
 (def autolink               (js/require "react-native-autolink"))
 (def camera                 (js/require "react-native-camera"))
 (def config                 (js/require "react-native-config"))
-;; TODO see https://github.com/rt2zz/react-native-contacts/issues/45
-(def contacts               (js/require "react-native-contacts"))
 (def dialogs                (js/require "react-native-dialogs"))
 (def dismiss-keyboard       (js/require "dismissKeyboard"))
 (def emoji-picker           (js/require "react-native-emoji-picker"))
@@ -19,7 +16,6 @@
 (def image-resizer          (js/require "react-native-image-resizer"))
 (def instabug               (js/require "instabug-reactnative"))
 (def linear-gradient        (js/require "react-native-linear-gradient"))
-(def mapbox-gl              (js/require "react-native-mapbox-gl"))
 (def nfc                    (js/require "nfc-react-native"))
 (def orientation            (js/require "react-native-orientation"))
 (def popup-menu             (js/require "react-native-popup-menu"))
@@ -37,3 +33,4 @@
 (def snoopy-bars            (js/require "rn-snoopy/stream/bars"))
 (def snoopy-buffer          (js/require "rn-snoopy/stream/buffer"))
 (def EventEmmiter           (js/require "react-native/Libraries/vendor/emitter/EventEmitter"))
+(def background-timer       (.-default (js/require "react-native-background-timer")))

@@ -6,21 +6,21 @@
             [status-im.ui.components.react :as react]
             [status-im.ui.components.animation :as animation]
             [status-im.ui.components.list-selection :as list-selection]
-            [status-im.chat.models.commands :as commands]
             [status-im.commands.utils :as commands.utils]
-            [status-im.chat.utils :as chat.utils]
+            [status-im.chat.models.commands :as models.commands]
+            [status-im.chat.models.message :as models.message]
             [status-im.chat.styles.message.message :as style]
             [status-im.chat.styles.message.command-pill :as pill-style]
             [status-im.chat.views.message.request-message :as request-message]
             [status-im.constants :as constants]
             [status-im.ui.components.chat-icon.screen :as chat-icon.screen]
-            [status-im.utils.events-buffer :as events-buffer]
             [status-im.utils.identicon :as identicon]
             [status-im.utils.gfycat.core :as gfycat]
             [status-im.utils.platform :as platform]
             [status-im.i18n :as i18n]
             [clojure.string :as string]
-            [status-im.chat.events.console :as console]))
+            [status-im.chat.events.console :as console]
+            [taoensso.timbre :as log]))
 
 (def window-width (:width (react/get-dimensions "window")))
 
@@ -78,7 +78,7 @@
           [react/view (pill-style/pill command)
            [react/text {:style pill-style/pill-text
                         :font  :default}
-            (chat.utils/command-name command)]]])
+            (models.commands/command-name command)]]])
        (when icon-path
          [react/view style/command-image-view
           [react/icon icon-path style/command-image]])
@@ -237,7 +237,7 @@
     (photo from photo-path)))
 
 (defn message-body
-  [{:keys [last-outgoing? message-type same-author? from outgoing] :as message} content]
+  [{:keys [last-outgoing? message-type same-author? from outgoing group-chat] :as message} content]
   [react/view style/group-message-wrapper
    [react/view (style/message-body message)
     [react/view style/message-author
@@ -248,7 +248,8 @@
     [react/view (style/group-message-view message)
      content
      (when last-outgoing?
-       (if (= (keyword message-type) :group-user-message)
+       (if (or (= (keyword message-type) :group-user-message)
+               group-chat)
          [group-message-delivery-status message]
          [message-delivery-status message]))]]])
 
@@ -264,10 +265,10 @@
               (callback))))))))
 
 (defn message-container [message & children]
-  (if (:new? message)
+  (if (:appearing? message)
     (let [layout-height (reagent/atom 0)
           anim-value    (animation/create-value 1)
-          anim-callback #(events-buffer/dispatch [:set-message-shown message])
+          anim-callback #(re-frame/dispatch [:message-appeared message])
           context       {:to-value layout-height
                          :val      anim-value
                          :callback anim-callback}
@@ -275,7 +276,8 @@
       (reagent/create-class
         {:component-did-update
          on-update
-         :display-name "message-container"
+         :display-name
+         "message-container"
          :reagent-render
          (fn [_ & children]
            @layout-height
@@ -289,29 +291,25 @@
 
 (defn chat-message [{:keys [outgoing message-id chat-id from current-public-key] :as message}]
   (reagent/create-class
-    {:display-name "chat-message"
+    {:display-name
+     "chat-message"
      :component-did-mount
      ;; send `:seen` signal when we have signed-in user, message not from us and we didn't sent it already
      #(when (and current-public-key message-id chat-id (not outgoing)
-                 (not (chat.utils/message-seen-by? message current-public-key)))
-        (events-buffer/dispatch [:send-seen! {:chat-id    chat-id
-                                              :from       from
-                                              :me         current-public-key
-                                              :message-id message-id}]))
+                 (not (models.message/message-seen-by? message current-public-key)))
+        (re-frame/dispatch [:send-seen! {:chat-id    chat-id
+                                         :from       from
+                                         :me         current-public-key
+                                         :message-id message-id}]))
      :reagent-render
      (fn [{:keys [outgoing group-chat content-type content] :as message}]
        [message-container message
-        [react/touchable-highlight {:on-press #(when platform/ios?
-                                                 (re-frame/dispatch [:set-chat-ui-props
-                                                                     {:show-emoji? false}])
-                                                 (react/dismiss-keyboard!))
-                                    :on-long-press #(cond (= content-type constants/text-content-type)
-                                                          (list-selection/share content (i18n/label :t/message))
-                                                          (and (= content-type constants/content-type-command)
-                                                               (= "location" (:content-command content)))
-                                                          (let [address (get-in content [:params :address])
-                                                                [location lat long] (string/split address #"&amp;")]
-                                                            (list-selection/share-or-open-map location lat long)))}
+        [react/touchable-highlight {:on-press      #(when platform/ios?
+                                                      (re-frame/dispatch [:set-chat-ui-props
+                                                                          {:show-emoji? false}])
+                                                      (react/dismiss-keyboard!))
+                                    :on-long-press #(when (= content-type constants/text-content-type)
+                                                      (list-selection/share content (i18n/label :t/message)))}
          [react/view
           (let [incoming-group (and group-chat (not outgoing))]
             [message-content message-body (merge message

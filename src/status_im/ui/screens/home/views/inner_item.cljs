@@ -8,7 +8,7 @@
             [status-im.ui.components.context-menu :as context-menu]
             [status-im.ui.screens.home.styles :as styles]
             [status-im.ui.components.styles :as component.styles]
-            [status-im.utils.utils :as utils]
+            [status-im.utils.core :as utils]
             [status-im.commands.utils :as commands-utils]
             [status-im.i18n :as i18n]
             [status-im.utils.datetime :as time]
@@ -123,7 +123,7 @@
     [react/view styles/chat-container
      [react/view styles/chat-icon-container
       (if contact'
-        [chat-icon.screen/dapp-icon-browser contact']
+        [chat-icon.screen/dapp-icon-browser contact' 36]
         [react/view styles/browser-icon-container
          [vector-icons/icon :icons/discover {:color component.styles/color-light-gray6}]])]
      [react/view styles/chat-info-container

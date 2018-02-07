@@ -1,6 +1,7 @@
 (ns status-im.ui.components.react
   (:require-macros [status-im.utils.views :as views])
   (:require [clojure.string :as string]
+            [goog.object :as object]
             [reagent.core :as r]
             [status-im.ui.components.styles :as st]
             [status-im.utils.utils :as u]
@@ -10,7 +11,7 @@
 
 (defn get-react-property [name]
   (if rn-dependencies/react-native
-    (aget rn-dependencies/react-native name)
+    (object/get rn-dependencies/react-native name)
     #js {}))
 
 (defn adapt-class [class]
@@ -33,8 +34,6 @@
 (def app-registry (get-react-property "AppRegistry"))
 (def app-state (get-react-property "AppState"))
 (def net-info (get-react-property "NetInfo"))
-(def geolocation (when (exists? js/window)
-                   js/navigator.geolocation.))
 (def view (get-class "View"))
 
 (def status-bar (get-class "StatusBar"))
@@ -137,7 +136,7 @@
 (def image-picker-class rn-dependencies/image-crop-picker)
 
 (defn show-access-error [o]
-  (when (= "ERROR_PICKER_UNAUTHORIZED_KEY" (aget o "code")) ; Do not show error when user cancel selection
+  (when (= "ERROR_PICKER_UNAUTHORIZED_KEY" (object/get o "code")) ; Do not show error when user cancel selection
     (u/show-popup (i18n/label :t/error)
                   (i18n/label :t/photos-access-error))))
 
@@ -197,7 +196,7 @@
                             (if (or (nil? timeout)
                                     (> 100 timeout))
                               (reset! loading false)
-                              (js/setTimeout (fn []
+                              (u/set-timeout (fn []
                                                (reset! loading false))
                                              timeout)))}
     (if (and (not enabled?) @loading)
