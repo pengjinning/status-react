@@ -4,11 +4,13 @@
             [status-im.data-store.realm.schemas.base.core :as base]
             [taoensso.timbre :as log]
             [status-im.utils.fs :as fs]
+            [status-im.utils.async :as utils.async]
             [clojure.string :as str]
             [goog.string :as gstr]
             [cognitect.transit :as transit]
             [clojure.walk :as walk]
-            [status-im.react-native.js-dependencies :as rn-dependencies])
+            [status-im.react-native.js-dependencies :as rn-dependencies]
+            [status-im.utils.utils :as utils])
   (:refer-clojure :exclude [exists?]))
 
 (defn realm-version
@@ -21,27 +23,45 @@
     (when (cljs.core/exists? js/window)
       (rn-dependencies/realm. (clj->js options)))))
 
+(defn delete-realm
+  [file-name]
+  (.deleteFile rn-dependencies/realm (clj->js {:path file-name})))
+
 (defn close [realm]
   (when realm
     (.close realm)))
 
-(defn migrate [file-name schemas]
+(defn migrate-realm [file-name schemas]
   (let [current-version (realm-version file-name)]
     (doseq [schema schemas
             :when (> (:schemaVersion schema) current-version)
             :let [migrated-realm (open-realm schema file-name)]]
-      (close migrated-realm))))
+      (close migrated-realm)))
+  (open-realm (last schemas) file-name))
+
+(defn reset-realm [file-name schemas]
+  (utils/show-popup "Please note" "You must recover or create a new account with this upgrade. Also chatting with accounts in previous releases is incompatible")
+  (delete-realm file-name)
+  (open-realm (last schemas) file-name))
 
 (defn open-migrated-realm
   [file-name schemas]
-  (migrate file-name schemas)
-  (open-realm (last schemas) file-name))
+  ;; TODO: remove for release 0.9.18
+  ;; delete the realm file if its schema version is higher
+  ;; than existing schema version (this means the previous
+  ;; install has incompatible database schemas)
+  (if (> (realm-version file-name)
+         (apply max (map :schemaVersion base/schemas)))
+    (reset-realm file-name schemas)
+    (migrate-realm file-name schemas)))
 
 (def new-account-filename "new-account")
 
 (def base-realm (open-migrated-realm (.-defaultPath rn-dependencies/realm) base/schemas))
 
 (def account-realm (atom (open-migrated-realm new-account-filename account/schemas)))
+
+(def realm-queue (utils.async/task-queue 2000))
 
 (defn close-account-realm []
   (close @account-realm)
@@ -85,25 +105,25 @@
   (.write realm f))
 
 
-(def transit-special-chars #{"~" "^" "`"})  
+(def transit-special-chars #{"~" "^" "`"})
 (def transit-escape-char "~")
 
 (defn to-be-escaped?
-  "Check if element is a string that begins 
+  "Check if element is a string that begins
    with a character recognized as special by Transit"
   [e]
   (and (string? e)
        (contains? transit-special-chars (first e))))
 
-(defn prepare-for-transit 
+(defn prepare-for-transit
   "Following Transit documentation, escape leading special characters
-  in strings by prepending a ~. This prepares for subsequent 
-  fetching from Realm where Transit is used for JSON parsing" 
+  in strings by prepending a ~. This prepares for subsequent
+  fetching from Realm where Transit is used for JSON parsing"
   [message]
   (let [walk-fn (fn [e]
                   (cond->> e
-                           (to-be-escaped? e) 
-                           (str transit-escape-char)))]
+                    (to-be-escaped? e)
+                    (str transit-escape-char)))]
     (walk/postwalk walk-fn message)))
 
 (defn create

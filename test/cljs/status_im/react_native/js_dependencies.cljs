@@ -1,7 +1,6 @@
 (ns status-im.react-native.js-dependencies)
 
 (def action-button          #js {:default #js {:Item #js {}}})
-(def autolink               #js {:default #js {}})
 (def config                 #js {:default #js {}})
 (def camera                 #js {:constants #js {}})
 (def dialogs                #js {})
@@ -18,7 +17,6 @@
 (def orientation            #js {})
 (def popup-menu             #js {})
 (def qr-code                #js {})
-(def random-bytes           #js {})
 (def react-native
   #js {:NativeModules      #js {}
        :Animated           #js {:View #js {}
@@ -27,7 +25,6 @@
        :Dimensions         #js {:get  (fn [])}})
 (def realm                  #js {:schemaVersion (fn [])
                                  :close         (fn [])})
-(def sortable-listview      #js {})
 (def vector-icons           #js {:default #js {}})
 (def webview-bridge         #js {:default #js {}})
 (def svg                    #js {:default #js {}})
@@ -38,6 +35,8 @@
 (def snoopy-bars             #js {:default #js {}})
 (def snoopy-buffer           #js {:default #js {}})
 (def EventEmmiter            #js {})
+(def fetch                   #js {})
+(def testfairy               #js {})
 
 (def background-timer       #js {:setTimeout js/setTimeout
                                  :setInterval js/setInterval

@@ -8,7 +8,7 @@ class PublicKeyText(BaseText):
 
     def __init__(self, driver):
         super(PublicKeyText, self).__init__(driver)
-        self.locator = self.Locator.accessibility_id('profile-public-key')
+        self.locator = self.Locator.accessibility_id('address-text')
 
     @property
     def text(self):
@@ -41,7 +41,7 @@ class OptionsButton(BaseButton):
 
         def __init__(self, driver):
             super(OptionsButton.UsernameInput, self).__init__(driver)
-            self.locator = self.Locator.xpath_selector('//android.widget.EditText')
+            self.locator = self.Locator.accessibility_id('username-input')
 
     class UserStatusInput(BaseEditBox):
 
@@ -54,7 +54,7 @@ class NetworkSettingsButton(BaseButton):
 
     def __init__(self, driver):
         super(NetworkSettingsButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector('//*[@text="Network settings"]')
+        self.locator = self.Locator.accessibility_id('network-button')
 
     class NetworkButton(BaseButton):
         def __init__(self, driver, network):
@@ -65,14 +65,14 @@ class NetworkSettingsButton(BaseButton):
 
         def __init__(self, driver):
             super(NetworkSettingsButton.ConnectButton, self).__init__(driver)
-            self.locator = self.Locator.xpath_selector('//*[@text="CONNECT"]')
+            self.locator = self.Locator.accessibility_id('network-connect-button')
 
 
 class LogoutButton(BaseButton):
 
     def __init__(self, driver):
         super(LogoutButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector('//*[@text="Log out"]')
+        self.locator = self.Locator.accessibility_id('log-out-button')
 
     def click(self):
         self.scroll_to_element()
@@ -84,33 +84,51 @@ class LogoutButton(BaseButton):
         return SignInView(self.driver)
 
 
+class UserNameText(BaseText):
+    def __init__(self, driver):
+        super(UserNameText, self).__init__(driver)
+        self.locator = self.Locator.xpath_selector(
+            '//android.widget.ImageView[@content-desc="chat-icon"]/../android.widget.TextView')
+
+
 class ShareMyContactKeyButton(BaseButton):
 
     def __init__(self, driver):
         super(ShareMyContactKeyButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector('//*[@text="SHARE MY CONTACT CODE"]')
+        self.locator = self.Locator.accessibility_id('share-my-contact-code-button')
 
 
 class EditButton(BaseButton):
 
     def __init__(self, driver):
         super(EditButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector('//*[@text="EDIT"]')
+        self.locator = self.Locator.accessibility_id('edit-button')
 
 
 class ConfirmButton(BaseButton):
 
     def __init__(self, driver):
         super(ConfirmButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector('(//android.view.ViewGroup[@content-desc="icon"])[1]')
+        self.locator = self.Locator.accessibility_id('done-button')
 
 
 class CrossIcon(BaseButton):
 
     def __init__(self, driver):
         super(CrossIcon, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector(
-            '(// android.view.ViewGroup[@ content-desc="icon"])[1]/android.view.View')
+        self.locator = self.Locator.accessibility_id('done-button')
+
+
+class AdvancedButton(BaseButton):
+
+    def __init__(self, driver):
+        super(AdvancedButton, self).__init__(driver)
+        self.locator = self.Locator.xpath_selector('//*[@text="Advanced"]')
+
+    def click(self):
+        self.scroll_to_element().click()
+        info('Tap on %s' % self.name)
+        return self.navigate()
 
 
 class ProfileView(BaseView):
@@ -133,10 +151,12 @@ class ProfileView(BaseView):
 
         # new design
 
+        self.username_text = UserNameText(self.driver)
         self.share_my_contact_key_button = ShareMyContactKeyButton(self.driver)
         self.edit_button = EditButton(self.driver)
         self.confirm_button = ConfirmButton(self.driver)
         self.cross_icon = CrossIcon(self.driver)
+        self.advanced_button = AdvancedButton(self.driver)
 
     def switch_network(self, network):
         self.network_settings_button.scroll_to_element()

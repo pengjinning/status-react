@@ -9,21 +9,27 @@
 (handlers/register-handler-fx
   ::wallet-send-chat-request
   [re-frame/trim-v]
-  (fn [{{:contacts/keys [contacts] :as db} :db} [amount]]
-    (-> db
-        (input-events/select-chat-input-command
-         (assoc (get-in contacts chat-const/request-command-ref) :prefill [amount]) nil true)
-        (assoc :dispatch [:send-current-message]))))
+  (fn [{{:contacts/keys [contacts]} :db :as cofx} [amount]]
+    (handlers/merge-fx cofx
+                       {:dispatch [:send-current-message]}
+                       (input-events/select-chat-input-command
+                        (assoc (get-in contacts chat-const/request-command-ref) :prefill [amount]) nil true))))
 
 (handlers/register-handler-fx
   :wallet-send-request
   [re-frame/trim-v]
-  (fn [{{:keys [wallet]} :db} [{:keys [whisper-identity]}]]
+  (fn [_ [whisper-identity amount]]
+    (assert whisper-identity)
     {:dispatch-n [[:navigate-back]
                   [:navigate-to-clean :home]
                   [:add-chat-loaded-event whisper-identity
-                   [::wallet-send-chat-request (some-> wallet :request-transaction :amount money/wei->ether str)]]
+                   [::wallet-send-chat-request (str (money/wei->ether amount))]]
                   [:start-chat whisper-identity]]}))
+
+(handlers/register-handler-fx
+  :wallet.request/set-recipient
+  (fn [{:keys [db]} [_ s]]
+    {:db (assoc-in db [:wallet :request-transaction :to] s)}))
 
 (handlers/register-handler-fx
   :wallet.request/set-and-validate-amount
@@ -32,8 +38,3 @@
       {:db (-> db
                (assoc-in [:wallet :request-transaction :amount] (money/ether->wei value))
                (assoc-in [:wallet :request-transaction :amount-error] error))})))
-
-(handlers/register-handler-fx
-  :wallet.request/set-symbol
-  (fn [{:keys [db]} [_ s]]
-    {:db (assoc-in db [:wallet :request-transaction :symbol] s)}))

@@ -3,6 +3,8 @@
             [clojure.string :as string]
             [re-frame.core :refer [reg-event-db reg-event-fx] :as re-frame]
             [re-frame.interceptor :refer [->interceptor get-coeffect get-effect]]
+            [status-im.utils.ethereum.core :as ethereum]
+            [status-im.utils.mixpanel :as mixpanel]
             [taoensso.timbre :as log])
   (:require-macros status-im.utils.handlers))
 
@@ -18,6 +20,12 @@
     (handler db params)
     db))
 
+(defn- pretty-print-event [ctx]
+  (let [[first second] (get-coeffect ctx :event)]
+    (if (or (string? second) (keyword? second) (boolean? second))
+      (str first " " second)
+      first)))
+
 (def debug-handlers-names
   "Interceptor which logs debug information to js/console for each event."
   (->interceptor
@@ -26,13 +34,12 @@
              [context]
              (when @pre-event-callback
                (@pre-event-callback (get-coeffect context :event)))
-             (log/debug "Handling re-frame event: " (first (get-coeffect context :event)))
+             (log/debug "Handling re-frame event: " (pretty-print-event context))
              context)))
 
 (defn- check-spec-msg-path-problem [problem]
-  (let [pred (:pred problem)]
-    (str "Spec: " (-> problem :via last) "\n"
-         "Predicate: " (subs (str (:pred problem)) 0 50))))
+  (str "Spec: " (-> problem :via last) "\n"
+       "Predicate: " (subs (str (:pred problem)) 0 50)))
 
 (defn- check-spec-msg-path-problems [path path-problems]
   (str "Key path: " path "\n"
@@ -76,6 +83,26 @@
          (throw (ex-info (check-spec-msg event-id new-db) {})))
        context))))
 
+(def track-mixpanel
+  "send an event to mixpanel for tracking"
+  (->interceptor
+   :id track-mixpanel
+   :after
+   (fn track-handler
+     [context]
+     (let [new-db             (get-coeffect context :db)
+           current-account-id (:accounts/current-account-id new-db)]
+       (when (get-in new-db [:accounts/accounts
+                             current-account-id
+                             :sharing-usage-data?])
+         (let [event    (get-coeffect context :event)
+               offline? (or (= :offline (:network-status new-db))
+                            (= :offline (:sync-state new-db)))
+               anon-id  (ethereum/sha3 current-account-id)]
+           (doseq [{:keys [label properties]}
+                   (mixpanel/matching-events event mixpanel/event-by-trigger)]
+             (mixpanel/track anon-id label properties offline?)))))
+     context)))
 
 (defn register-handler
   ([name handler] (register-handler name nil handler))
@@ -83,7 +110,10 @@
    (reg-event-db name [debug-handlers-names (when js/goog.DEBUG check-spec) middleware] handler)))
 
 (def default-interceptors
-  [debug-handlers-names (when js/goog.DEBUG check-spec) (re-frame/inject-cofx :now)])
+  [debug-handlers-names
+   (when js/goog.DEBUG check-spec)
+   (re-frame/inject-cofx :now)
+   track-mixpanel])
 
 (defn register-handler-db
   ([name handler] (register-handler-db name nil handler))
@@ -107,3 +137,17 @@
        (remove (fn [{:keys [dapp? pending?]}]
                  (or pending? dapp?)))
        (map :whisper-identity)))
+
+(defn update-db [cofx fx]
+  (if-let [db (:db fx)]
+    (assoc cofx :db db)
+    cofx))
+
+(defn safe-merge [fx new-fx]
+  (if (:merging-fx-with-common-keys fx)
+    fx
+    (let [common-keys (clojure.set/intersection (into #{} (keys fx))
+                                                (into #{} (keys new-fx)))]
+      (if (empty? (disj common-keys :db))
+        (merge fx new-fx)
+        {:merging-fx-with-common-keys common-keys}))))

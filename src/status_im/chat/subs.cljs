@@ -1,14 +1,16 @@
 (ns status-im.chat.subs
-  (:require [re-frame.core :refer [reg-sub subscribe]]
+  (:require [clojure.string :as string]
+            [re-frame.core :refer [reg-sub subscribe]]
             [status-im.constants :as constants]
+            [status-im.chat.constants :as chat-constants]
             [status-im.chat.models.input :as input-model]
-            [status-im.chat.models.commands :as commands-model] 
+            [status-im.chat.models.commands :as commands-model]
             [status-im.chat.views.input.utils :as input-utils]
             [status-im.commands.utils :as commands-utils]
             [status-im.utils.datetime :as time]
             [status-im.utils.platform :as platform]
             [status-im.i18n :as i18n]
-            [clojure.string :as string]))
+            [status-im.constants :as const]))
 
 (reg-sub :get-chats :chats)
 
@@ -45,13 +47,23 @@
   :chat-input-margin
   :<- [:get :keyboard-height]
   (fn [kb-height]
-    (if platform/ios? kb-height 0)))
+    (cond
+      (and platform/iphone-x? (> kb-height 0)) (- kb-height 34)
+      platform/ios? kb-height
+      :default 0)))
+
+(defn active-chats [dev-mode?]
+  (fn [[_ chat]]
+    (and (:is-active chat)
+         (or dev-mode?
+             (not= const/console-chat-id (:chat-id chat))))))
 
 (reg-sub
   :get-active-chats
   :<- [:get-chats]
-  (fn [chats]
-    (into {} (filter (comp :is-active second)) chats)))
+  :<- [:get-current-account]
+  (fn [[chats {:keys [dev-mode?]}]]
+    (into {} (filter (active-chats dev-mode?) chats))))
 
 (reg-sub
   :get-chat
@@ -72,76 +84,136 @@
   (fn [{:keys [messages]} [_ message-id]]
     (get messages message-id)))
 
-(reg-sub
-  :chat
-  :<- [:get-active-chats]
-  :<- [:get-current-chat-id]
-  (fn [[chats id] [_ k chat-id]]
-    (get-in chats [(or chat-id id) k])))
+(defn- intersperse-datemark
+  "Reduce step which expects the input list of messages to be sorted by clock value.
+  It makes best effort to group them by day.
+  We cannot sort them by :timestamp, as that represents the clock of the sender
+  and we have no guarantees on the order.
 
-(defn message-datemark-groups
-  "Transforms map of messages into sequence of `[datemark messages]` tuples, where
-  messages with particular datemark are sorted according to their `:clock-value` and
-  tuples themeselves are sorted according to the highest `:clock-value` in the messages."
+  We naively and arbitrarly group them assuming that out-of-order timestamps
+  fall in the previous bucket.
+
+  A sends M1 to B with timestamp 2000-01-01T00:00:00
+  B replies M2 with timestamp    1999-12-31-23:59:59
+
+  M1 needs to be displayed before M2
+
+  so we bucket both in 1999-12-31"
+  [{:keys [acc last-timestamp last-datemark]} {:keys [timestamp datemark] :as msg}]
+  (cond (empty? acc)                                     ; initial element
+        {:last-timestamp timestamp
+         :last-datemark  datemark
+         :acc            (conj acc msg)}
+
+        (and (not= last-datemark datemark)               ; not the same day
+             (< timestamp last-timestamp))               ; not out-of-order
+        {:last-timestamp timestamp
+         :last-datemark  datemark
+         :acc            (conj acc {:value last-datemark ; intersperse datemark message
+                                    :type  :datemark}
+                               msg)}
+        :else
+        {:last-timestamp (max timestamp last-timestamp)  ; use last datemark
+         :last-datemark  last-datemark
+         :acc            (conj acc (assoc msg :datemark last-datemark))}))
+
+(defn sort-messages
+  "Remove hidden messages and sort by clock-value desc, breaking ties by message id"
   [id->messages]
-  (let [datemark->messages (transduce (comp (map second)
-                                            (filter :show?)
-                                            (map (fn [{:keys [timestamp] :as msg}]
-                                                   (assoc msg :datemark (time/day-relative timestamp)))))
-                                      (completing (fn [acc {:keys [datemark] :as msg}]
-                                                    (update acc datemark conj msg)))
-                                      {}
-                                      id->messages)]
-    (->> datemark->messages
-         (map (fn [[datemark messages]]
-                [datemark (sort-by :clock-value > messages)]))
-         (sort-by (comp :clock-value first second) >))))
+  (->> id->messages
+       vals
+      (filter :show?)
+      (sort-by (juxt (comp unchecked-negate :clock-value) :message-id))))
+
+(defn- add-datemark [{:keys [timestamp] :as msg}]
+   (assoc msg :datemark (time/day-relative timestamp)))
+
+(defn- add-timestamp [{:keys [timestamp] :as msg}]
+  (assoc msg :timestamp-str (time/timestamp->time timestamp)))
+
+(defn intersperse-datemarks
+  "Add a datemark in between an ordered seq of messages when two datemarks are not
+  the same. Ignore messages with out-of-order timestamps"
+  [messages]
+  (when (seq messages)
+    (let [messages-with-datemarks (transduce (comp
+                                               (map add-datemark)
+                                               (map add-timestamp))
+                                             (completing intersperse-datemark :acc)
+                                             {:acc []}
+                                             messages)]
+      ; Append last datemark
+      (conj messages-with-datemarks {:value (:datemark (peek messages-with-datemarks))
+                                     :type  :datemark}))))
+
+(defn- set-previous-message-first-in-group [stream]
+  (conj (pop stream) (assoc (peek stream) :first-in-group? true)))
+
+; any message that comes after this amount of ms will be grouped separately
+(def ^:private group-ms 60000)
+
+(defn add-positional-metadata
+  "Reduce step which adds positional metadata to a message and conditionally
+  update the previous message with :first-in-group?."
+  [{:keys [stream last-outgoing-seen]}
+   {:keys [type from datemark outgoing timestamp] :as message}]
+  (let [previous-message         (peek stream)
+        ; Was the previous message from a different author or this message
+        ; comes after x ms
+        last-in-group?           (or (not= from (:from previous-message))
+                                     (> (- (:timestamp previous-message) timestamp) group-ms))
+        same-direction?          (= outgoing (:outgoing previous-message))
+        ; Have we seen an outgoing message already?
+        last-outgoing?           (and (not last-outgoing-seen)
+                                      outgoing)
+        datemark?                (= :datemark (:type message))
+        ; If this is a datemark or this is the last-message of a group,
+        ; then the previous message was the first
+        previous-first-in-group? (or datemark?
+                                     last-in-group?)
+        new-message              (assoc message
+                                        :same-direction? same-direction?
+                                        :last-in-group? last-in-group?
+                                        :last-outgoing? last-outgoing?)]
+    {:stream             (cond-> stream
+                           previous-first-in-group?
+                           ; update previuous message if necessary
+                           set-previous-message-first-in-group
+
+                           :always
+                           (conj new-message))
+     ; mark the last message sent by the user
+     :last-outgoing-seen (or last-outgoing-seen last-outgoing?)}))
+
+(defn messages-stream
+  "Enhances the messages in message sequence interspersed with datemarks
+  with derived stream context information, like:
+  `:first-in-group?`, `last-in-group?`, `:same-direction?`, `:last?` and `:last-outgoing?` flags."
+  [ordered-messages]
+  (when (seq ordered-messages)
+    (let [initial-message (first ordered-messages)
+          message-with-metadata (assoc initial-message
+                                       :last-in-group? true
+                                       :last? true
+                                       :last-outgoing? (:outgoing initial-message))]
+      (->> (rest ordered-messages)
+           (reduce add-positional-metadata
+                   {:stream             [message-with-metadata]
+                    :last-outgoing-seen (:last-outgoing? message-with-metadata)})
+           :stream))))
 
 (reg-sub
-  :get-chat-message-datemark-groups
+  :get-ordered-chat-messages
   (fn [[_ chat-id]]
     (subscribe [:get-chat chat-id]))
   (fn [{:keys [messages]}]
-    (message-datemark-groups messages)))
-
-(defn messages-stream
-  "Transforms message-datemark-groups into flat sequence of messages interspersed with
-  datemark messages.
-  Additionaly enhances the messages in message sequence with derived stream context information,
-  like `:same-author?`, `:same-direction?`, `:last?` and `:last-outgoing?` flags. "
-  [message-datemark-groups]
-  (if (seq message-datemark-groups)
-    (let [messages-seq (mapcat second message-datemark-groups)
-          {last-message-id :message-id} (first messages-seq)
-          {last-outgoing-message-id :message-id} (->> messages-seq
-                                                      (filter :outgoing)
-                                                      first)]
-      (->> message-datemark-groups
-           (mapcat (fn [[datemark messages]]
-                     (let [prepared-messages (into []
-                                                   (map (fn [{:keys [message-id] :as message} previous-message]
-                                                          (assoc message
-                                                                 :same-author?    (= (:from message)
-                                                                                     (:from previous-message))
-                                                                 :same-direction? (= (:outgoing message)
-                                                                                     (:outgoing previous-message))
-                                                                 :last?           (= message-id
-                                                                                     last-message-id)
-                                                                 :last-outgoing?  (= message-id
-                                                                                     last-outgoing-message-id)))
-                                                        messages
-                                                        (concat (rest messages) '(nil))))]
-                       (conj prepared-messages {:type :datemark
-                                                :value datemark}))))))
-    ;; when no messages are in chat, we need to at least fake-out today's datemark
-    (list {:type  :datemark
-           :value (i18n/label :t/datetime-today)})))
+    (sort-messages messages)))
 
 (reg-sub
   :get-current-chat-messages
   :<- [:get-current-chat]
   (fn [{:keys [messages]}]
-    (-> messages message-datemark-groups messages-stream)))
+    (-> messages sort-messages intersperse-datemarks messages-stream)))
 
 (reg-sub
   :get-commands-for-chat
@@ -166,7 +238,9 @@
 (defn- available-commands-responses [[commands-responses {:keys [input-text]}]]
   (->> commands-responses
        map->sorted-seq
-       (filter #(string/includes? (commands-model/command-name %) (or input-text "")))))
+       (filter (fn [item]
+                 (when (input-model/starts-as-command? input-text)
+                   (string/includes? (commands-model/command-name item) input-text))))))
 
 (reg-sub
   :get-available-commands
@@ -194,6 +268,24 @@
   :<- [:get-responses-for-chat]
   (fn [[chat commands responses]]
     (input-model/selected-chat-command chat commands responses)))
+
+(reg-sub
+  :chat-input-placeholder
+  :<- [:get-current-chat]
+  :<- [:selected-chat-command]
+  (fn [[{:keys [input-text]} command]]
+    (when (and (string/ends-with? (or input-text "") chat-constants/spacing-char)
+               (not (get-in command [:command :sequential-params])))
+      (let [input     (string/trim (or input-text ""))
+            real-args (remove string/blank? (:args command))]
+        (cond
+          (and command (empty? real-args))
+          (get-in command [:command :params 0 :placeholder])
+
+          (and command
+               (= (count real-args) 1)
+               (input-model/text-ends-with-space? input))
+          (get-in command [:command :params 1 :placeholder]))))))
 
 (reg-sub
   :current-chat-argument-position
@@ -239,15 +331,21 @@
   input-model/command-completion)
 
 (reg-sub
-  :show-suggestions?
+  :show-suggestions-view?
   :<- [:get-current-chat-ui-prop :show-suggestions?]
   :<- [:get-current-chat]
   :<- [:selected-chat-command]
   :<- [:get-available-commands-responses]
   (fn [[show-suggestions? {:keys [input-text]} selected-command commands-responses]]
     (and (or show-suggestions? (input-model/starts-as-command? (string/trim (or input-text ""))))
-         (not (:command selected-command))
          (seq commands-responses))))
+
+(reg-sub
+  :show-suggestions?
+  :<- [:show-suggestions-view?]
+  :<- [:selected-chat-command]
+  (fn [[show-suggestions-box? selected-command]]
+    (and show-suggestions-box? (not (:command selected-command)))))
 
 (reg-sub
   :is-request-answered?
@@ -277,29 +375,17 @@
 (reg-sub
   :get-last-message
   (fn [[_ chat-id]]
-    (subscribe [:get-chat-message-datemark-groups chat-id]))
-  (comp first second first))
-
-(reg-sub
-  :get-default-container-area-height
-  :<- [:get-current-chat-ui-prop :input-height]
-  :<- [:get :layout-height]
-  :<- [:chat-input-margin]
-  (fn [[input-height layout-height chat-input-margin]]
-    (let [bottom (+ input-height chat-input-margin)]
-      (input-utils/default-container-area-height bottom layout-height))))
-
-(reg-sub
-  :get-max-container-area-height
-  :<- [:get-current-chat-ui-prop :input-height]
-  :<- [:get :layout-height]
-  :<- [:chat-input-margin]
-  (fn [[input-height layout-height chat-input-margin]]
-    (let [bottom (+ input-height chat-input-margin)]
-      (input-utils/max-container-area-height bottom layout-height))))
+    (subscribe [:get-ordered-chat-messages chat-id]))
+  first)
 
 (reg-sub
   :chat-animations
   (fn [db [_ key type]]
     (let [chat-id (subscribe [:get-current-chat-id])]
       (get-in db [:chat-animations @chat-id key type]))))
+
+(reg-sub
+  :get-chats-unread-messages-number
+  :<- [:get-active-chats]
+  (fn [chats _]
+    (apply + (map #(count (:unviewed-messages %)) (vals chats)))))

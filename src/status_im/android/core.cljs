@@ -9,9 +9,6 @@
             [status-im.ui.screens.views :as views]
             [status-im.ui.components.react :as react]
             [status-im.native-module.core :as status]
-            [status-im.utils.error-handler :as error-handler]
-            [status-im.utils.utils :as utils]
-            [status-im.utils.config :as config]
             [status-im.utils.notifications :as notifications]
             [status-im.core :as core]
             [status-im.utils.snoopy :as snoopy]))
@@ -22,11 +19,9 @@
                        ;; this listener and handle application's closing
                        ;; in handlers
                        (let [stack      (subscribe [:get :navigation-stack])
-                             creating?  (subscribe [:get :accounts/creating-account?])
                              result-box (subscribe [:get-current-chat-ui-prop :result-box])
                              webview    (subscribe [:get :webview-bridge])]
                          (cond
-                           @creating? true
 
                            (and @webview (:can-go-back? @result-box))
                            (do (.goBack @webview) true)
@@ -37,9 +32,6 @@
                            :else false)))]
     (.addEventListener react/back-handler "hardwareBackPress" new-listener)))
 
-(defn orientation->keyword [o]
-  (keyword (.toLowerCase o)))
-
 (defn app-state-change-handler [state]
   (dispatch [:app-state-change state]))
 
@@ -48,12 +40,6 @@
     (reagent/create-class
       {:component-will-mount
        (fn []
-         (let [o (orientation->keyword (.getInitialOrientation react/orientation))]
-           (dispatch [:set :orientation o]))
-         (.addOrientationListener
-          react/orientation
-          #(dispatch [:set :orientation (orientation->keyword %)]))
-         (.lockToPortrait react/orientation)
          (.addListener react/keyboard
                        "keyboardDidShow"
                        (fn [e]

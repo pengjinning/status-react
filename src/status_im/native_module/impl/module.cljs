@@ -2,7 +2,7 @@
   (:require-macros
    [cljs.core.async.macros :refer [go-loop go]])
   (:require [status-im.ui.components.react :as r]
-            [re-frame.core :refer [dispatch]]
+            [re-frame.core :refer [dispatch] :as re-frame]
             [taoensso.timbre :as log]
             [cljs.core.async :as async :refer [<!]]
             [status-im.utils.js-resources :as js-res]
@@ -63,7 +63,8 @@
                                  "JavaScriptCore"
                                  "OttoVM")
                                " jail initialized")]
-          (.initJail status init-js' #(log/debug log-message)))))))
+          (.initJail status init-js' #(do (re-frame/dispatch [:initialize-app])
+                                          (log/debug log-message))))))))
 
 (defonce listener-initialized (atom false))
 
@@ -103,9 +104,9 @@
                    true)
                  false))))))
 
-(defn notify [token on-result]
+(defn notify-users [{:keys [message payload tokens] :as m} on-result]
   (when status
-    (call-module #(.notify status token on-result))))
+    (call-module #(.notifyUsers status message payload tokens on-result))))
 
 (defn add-peer [enode on-result]
   (when status
@@ -232,6 +233,12 @@
 (defn close-application []
   (.closeApplication status))
 
+(defn connection-change [{:keys [type expensive?]}]
+  (.connectionChange status type expensive?))
+
+(defn app-state-change [state]
+  (.appStateChange status state))
+
 (defrecord ReactNativeStatus []
   module/IReactNativeStatus
   ;; status-go calls
@@ -259,8 +266,8 @@
     (call-function! params))
   (-call-web3 [this payload callback]
     (call-web3 payload callback))
-  (-notify [this token callback]
-    (notify token callback))
+  (-notify-users [this {:keys [message payload tokens] :as m} callback]
+    (notify-users m callback))
   (-add-peer [this enode callback]
     (add-peer enode callback))
 
@@ -276,4 +283,8 @@
   (-should-move-to-internal-storage? [this callback]
     (should-move-to-internal-storage? callback))
   (-close-application [this]
-    (close-application)))
+    (close-application))
+  (-connection-change [this data]
+   (connection-change data))
+  (-app-state-change [this state]
+   (app-state-change state)))

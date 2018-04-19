@@ -1,52 +1,59 @@
 (ns status-im.ui.screens.add-new.views
-  (:require-macros [status-im.utils.views :refer [defview letsubs]])
+  (:require-macros [status-im.utils.views :as views])
   (:require [re-frame.core :as re-frame]
+            [status-im.i18n :as i18n]
             [status-im.ui.components.action-button.action-button :as action-button]
             [status-im.ui.components.action-button.styles :as action-button.styles]
-            [status-im.ui.components.react :as react]
             [status-im.ui.components.colors :as colors]
+            [status-im.ui.components.common.common :as common]
+            [status-im.ui.components.list-selection :as list-selection]
+            [status-im.ui.components.react :as react]
+            [status-im.ui.components.styles :as styles]
             [status-im.ui.components.status-bar.view :as status-bar]
-            [status-im.i18n :as i18n]
-            [status-im.ui.components.toolbar.view :as toolbar.view]
-            [status-im.ui.components.common.common :as components]))
+            [status-im.ui.components.toolbar.view :as toolbar]))
 
-(defn options-list []
+(defn- options-list [{:keys [address]}]
   [react/view action-button.styles/actions-list
    [action-button/action-button
-    {:label     (i18n/label :t/start-new-chat)
-     :icon      :icons/newchat
-     :icon-opts {:color colors/blue}
-     :on-press  #(re-frame/dispatch [:navigate-to :new-chat])}]
+    {:label               (i18n/label :t/start-new-chat)
+     :accessibility-label :start-1-1-chat-button
+     :icon                :icons/newchat
+     :icon-opts           {:color colors/blue}
+     :on-press            #(re-frame/dispatch [:navigate-to :new-chat])}]
+   [action-button/action-separator]
+   ;; TODO temporary removal before everything is fixed in group chats
+   [action-button/action-button
+    {:label               (i18n/label :t/start-group-chat)
+     :accessibility-label :start-group-chat-button
+     :icon                :icons/contacts
+     :icon-opts           {:color colors/blue}
+     :on-press            #(re-frame/dispatch [:open-contact-toggle-list :chat-group])}]
    [action-button/action-separator]
    [action-button/action-button
-    {:label     (i18n/label :t/start-group-chat)
-     :icon      :icons/contacts
-     :icon-opts {:color colors/blue}
-     :on-press  #(re-frame/dispatch [:open-contact-toggle-list :chat-group])}]
+    {:label               (i18n/label :t/new-public-group-chat)
+     :accessibility-label :join-public-chat-button
+     :icon                :icons/public
+     :icon-opts           {:color colors/blue}
+     :on-press            #(re-frame/dispatch [:navigate-to :new-public-chat])}]
    [action-button/action-separator]
    [action-button/action-button
-    {:label     (i18n/label :t/new-public-group-chat)
-     :icon      :icons/public
-     :icon-opts {:color colors/blue}
-     :on-press  #(re-frame/dispatch [:navigate-to :new-public-chat])}]
+    {:label               (i18n/label :t/open-dapp)
+     :accessibility-label :open-dapp-button
+     :icon                :icons/address
+     :icon-opts           {:color colors/blue}
+     :on-press            #(re-frame/dispatch [:navigate-to :open-dapp])}]
    [action-button/action-separator]
    [action-button/action-button
-    {:label     (i18n/label :t/open-dapp)
-     :icon      :icons/address
-     :icon-opts {:color colors/blue}
-     :on-press  #(re-frame/dispatch [:navigate-to :open-dapp])}]
-   [action-button/action-separator]
-   [action-button/action-button
-    {:label     (i18n/label :t/invite-friends)
-     :icon      :icons/share
-     :icon-opts {:color colors/blue}
-     :on-press  #()}]])
+    {:label               (i18n/label :t/invite-friends)
+     :accessibility-label :invite-friends-button
+     :icon                :icons/share
+     :icon-opts           {:color colors/blue}
+     :on-press            #(list-selection/open-share {:message (i18n/label :t/get-status-at {:address address})})}]])
 
-(defview add-new []
-  (letsubs [contacts [:all-added-group-contacts-filtered]
-            params [:get :contacts/click-params]]
-    [react/view {:flex 1}
+(views/defview add-new []
+  (views/letsubs [account  [:get-current-account]]
+    [react/view {:flex 1 :background-color :white}
      [status-bar/status-bar]
-     [toolbar.view/simple-toolbar (i18n/label :t/new)]
-     [components/separator]
-     [options-list]]))
+     [toolbar/simple-toolbar (i18n/label :t/new)]
+     [common/separator]
+     [options-list account]]))

@@ -60,13 +60,17 @@
                  :style  (merge styles/item-image image-style)}]])
 
 (defn item-primary
-  [primary]
-  [react/text {:style styles/primary-text} primary])
+  ([s] (item-primary nil s))
+  ([{:keys [style] :as props} s]
+   [react/text (merge {:style styles/primary-text}
+                      (dissoc props :style))
+    s]))
 
 (defn item-primary-only
   ([s] (item-primary-only nil s))
-  ([{:keys [style]} s]
-   [react/text {:style (merge styles/primary-text-only style)}
+  ([{:keys [style] :as props} s]
+   [react/text (merge {:style (merge styles/primary-text-only style)}
+                      (dissoc props :style))
     s]))
 
 (defn item-secondary
@@ -82,14 +86,24 @@
   [react/view {:style (merge style styles/item-checkbox)}
    [checkbox/checkbox props]])
 
+(defn list-item-with-checkbox [{:keys [on-value-change checked? plain-checkbox?] :as props} item]
+  (let [handler  #(on-value-change (not checked?))
+        checkbox [(if plain-checkbox? checkbox/checkbox item-checkbox) props]
+        item     (conj item checkbox)]
+    [touchable-item handler item]))
+
 (def item-icon-forward
-  [item-icon {:style     styles/item-icon
-              :icon      :icons/forward
+  [item-icon {:icon      :icons/forward
               :icon-opts {:color colors/white-light-transparent}}])
 
 (defn- wrap-render-fn [f]
   (fn [data]
     (reagent/as-element (f (.-item data) (.-index data) (.-separators data)))))
+
+(defn- wrap-key-fn [f]
+  (fn [data index]
+    {:post [(some? %)]}
+    (f data index)))
 
 (def default-separator [react/view styles/separator])
 
@@ -100,13 +114,13 @@
 (def section-separator [react/view styles/section-separator])
 
 (defn- base-list-props
-  [{:keys [render-fn empty-component header separator default-separator?]}]
+  [{:keys [key-fn render-fn empty-component header separator default-separator?]}]
   (let [separator (or separator (when (and platform/ios? default-separator?) default-separator))]
-    (merge {:keyExtractor (fn [_ i] i)}
-           (when render-fn               {:renderItem (wrap-render-fn render-fn)})
-           (when separator               {:ItemSeparatorComponent (fn [] (reagent/as-element separator))})
-           (when empty-component         {:ListEmptyComponent (fn [] (reagent/as-element empty-component))})
-           (when header                  {:ListHeaderComponent (fn [] (reagent/as-element header))}))))
+    (merge (when key-fn          {:keyExtractor (wrap-key-fn key-fn)})
+           (when render-fn       {:renderItem (wrap-render-fn render-fn)})
+           (when separator       {:ItemSeparatorComponent (fn [] (reagent/as-element separator))})
+           (when empty-component {:ListEmptyComponent (fn [] (reagent/as-element empty-component))})
+           (when header          {:ListHeaderComponent (fn [] (reagent/as-element header))}))))
 
 ;; Workaround an issue in reagent that does not consider JS array as JS value
 ;; This forces clj <-> js serialization and breaks clj semantic
@@ -170,3 +184,38 @@
           {:sections            (clj->js (map wrap-per-section-render-fn sections))
            :renderSectionHeader (wrap-render-section-header-fn render-section-header-fn)}
           (when platform/ios? {:SectionSeparatorComponent (fn [] (reagent/as-element section-separator))}))])
+
+(defn- render-action [{:keys [label accessibility-label icon action disabled?]}
+                      {:keys [action-style action-label-style icon-opts]}]
+  [react/touchable-highlight {:on-press action}
+   [react/view {:accessibility-label accessibility-label}
+    [item
+     [item-icon {:icon      icon
+                 :style     (merge styles/action
+                                   action-style
+                                   (when disabled? styles/action-disabled))
+                 :icon-opts (merge {:color :white}
+                                   icon-opts
+                                   (when disabled? {:color colors/gray}))}]
+     [item-primary-only {:style (merge styles/action-label
+                                       action-label-style
+                                       (when disabled? styles/action-label-disabled))}
+      label]
+     item-icon-forward]]])
+
+
+(defn action-list [actions {:keys [container-style action-separator-style] :as styles}]
+  [react/view (merge styles/action-list container-style)
+   [flat-list
+    {:separator (when platform/ios?
+                  [react/view (merge styles/action-separator
+                                     action-separator-style)])
+     :data      actions
+     :key-fn    (fn [_ i] (str i))
+     :render-fn #(render-action % styles)}]])
+
+(defn list-with-label [{:keys [style]} label list]
+  [react/view (merge styles/list-with-label-wrapper style)
+   [react/text {:style styles/label}
+    label]
+   list])

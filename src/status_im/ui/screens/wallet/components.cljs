@@ -24,25 +24,39 @@
                                       props)
    text])
 
-(defn- toolbar [action title]
-  [toolbar/toolbar {:style styles/toolbar}
-   [toolbar/nav-button action]
-   [toolbar/content-title {:color :white}
-    title]])
+(def default-action (actions/back-white actions/default-handler))
 
-(defn simple-screen [title content]
-  [react/view {:flex 1 :background-color colors/blue}
-   [status-bar/status-bar {:type :wallet}]
-   [toolbar (actions/back-white actions/default-handler)
-    title]
-   content])
+(defn- toolbar
+  ([title] (toolbar {} title))
+  ([props title] (toolbar props default-action title))
+  ([props action title] (toolbar props action title nil))
+  ([props action title options]
+   [toolbar/toolbar (utils/deep-merge {:style styles/toolbar}
+                                      props)
+    [toolbar/nav-button action]
+    [toolbar/content-title {:color :white}
+     title]
+    options]))
+
+(defn- top-view [avoid-keyboard?]
+  (if avoid-keyboard?
+    react/keyboard-avoiding-view
+    react/view))
+
+(defn simple-screen
+  ([toolbar content] (simple-screen nil toolbar content))
+  ([{:keys [avoid-keyboard? status-bar-type]} toolbar content]
+   [(top-view avoid-keyboard?) {:flex 1 :background-color colors/blue}
+    [status-bar/status-bar {:type (or status-bar-type :wallet)}]
+    toolbar
+    content]))
 
 (defn- cartouche-content [{:keys [disabled?]} content]
   [react/view {:style (styles/cartouche-content-wrapper disabled?)}
    [react/view {:flex 1}
     content]])
 
-(defn cartouche [{:keys [disabled? on-press icon] :or {icon :icons/forward} :as m} header content]
+(defn cartouche [{:keys [disabled? on-press icon icon-opts] :or {icon :icons/forward} :as m} header content]
   [react/view {:style styles/cartouche-container}
    [react/text {:style styles/cartouche-header}
     header]
@@ -55,7 +69,7 @@
           [react/view styles/cartouche-icon-wrapper
            [react/view {:flex 1} ;; Let content shrink if needed
             content]
-           [vector-icons/icon icon {:color :white}]]
+           [vector-icons/icon icon (merge {:color :white} icon-opts)]]
           content)]]])])
 
 (defn- cartouche-primary-text [s]
@@ -67,9 +81,6 @@
    s])
 
 (defn cartouche-text-content [primary secondary]
-  [react/view {:flex-direction     :row
-               :justify-content    :space-between
-               :padding-horizontal 15
-               :padding-vertical   15}
+  [react/view styles/cartouche-text-wrapper
    [cartouche-primary-text primary]
    [cartouche-secondary-text secondary]])

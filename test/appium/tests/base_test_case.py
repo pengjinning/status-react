@@ -3,11 +3,13 @@ import sys
 import re
 import subprocess
 import asyncio
-from selenium.common.exceptions import WebDriverException
-from tests import test_data, start_threads
+
 from os import environ
 from appium import webdriver
 from abc import ABCMeta, abstractmethod
+from selenium.common.exceptions import WebDriverException
+from tests import test_suite_data, start_threads
+from views.base_view import BaseView
 
 
 class AbstractTestCase:
@@ -49,17 +51,21 @@ class AbstractTestCase:
     @property
     def capabilities_sauce_lab(self):
         desired_caps = dict()
-        desired_caps['app'] = 'sauce-storage:' + test_data.apk_name
+        desired_caps['app'] = 'sauce-storage:' + test_suite_data.apk_name
 
         desired_caps['build'] = pytest.config.getoption('build')
-        desired_caps['name'] = test_data.test_name
+        desired_caps['name'] = test_suite_data.current_test.name
         desired_caps['platformName'] = 'Android'
-        desired_caps['appiumVersion'] = '1.7.1'
-        desired_caps['platformVersion'] = '6.0'
+        desired_caps['appiumVersion'] = '1.7.2'
+        desired_caps['platformVersion'] = '7.1'
         desired_caps['deviceName'] = 'Android GoogleAPI Emulator'
         desired_caps['deviceOrientation'] = "portrait"
         desired_caps['commandTimeout'] = 600
         desired_caps['idleTimeout'] = 1000
+        desired_caps['unicodeKeyboard'] = True
+        desired_caps['automationName'] = 'UiAutomator2'
+        desired_caps['setWebContentDebuggingEnabled'] = True
+        desired_caps['ignoreUnimportantViews'] = False
         return desired_caps
 
     @property
@@ -68,10 +74,13 @@ class AbstractTestCase:
         desired_caps['app'] = pytest.config.getoption('apk')
         desired_caps['deviceName'] = 'nexus_5'
         desired_caps['platformName'] = 'Android'
-        desired_caps['appiumVersion'] = '1.7.1'
-        desired_caps['platformVersion'] = '6.0'
+        desired_caps['appiumVersion'] = '1.7.2'
+        desired_caps['platformVersion'] = '7.1'
         desired_caps['newCommandTimeout'] = 600
         desired_caps['fullReset'] = False
+        desired_caps['unicodeKeyboard'] = True
+        desired_caps['automationName'] = 'UiAutomator2'
+        desired_caps['setWebContentDebuggingEnabled'] = True
         return desired_caps
 
     @abstractmethod
@@ -88,35 +97,41 @@ class AbstractTestCase:
 
     @property
     def implicitly_wait(self):
-        return 10
+        return 8
 
-    def update_test_info_dict(self):
-        test_data.test_info[test_data.test_name] = dict()
-        test_data.test_info[test_data.test_name]['jobs'] = list()
-        test_data.test_info[test_data.test_name]['steps'] = str()
+    errors = []
+
+    def verify_no_errors(self):
+        if self.errors:
+            pytest.fail('. '.join([self.errors.pop(0) for _ in range(len(self.errors))]))
 
 
 class SingleDeviceTestCase(AbstractTestCase):
 
     def setup_method(self, method):
-        self.update_test_info_dict()
-
         capabilities = {'local': {'executor': self.executor_local,
                                   'capabilities': self.capabilities_local},
                         'sauce': {'executor': self.executor_sauce_lab,
                                   'capabilities': self.capabilities_sauce_lab}}
-
-        self.driver = webdriver.Remote(capabilities[self.environment]['executor'],
-                                       capabilities[self.environment]['capabilities'])
-        self.driver.implicitly_wait(self.implicitly_wait)
-        test_data.test_info[test_data.test_name]['jobs'].append(self.driver.session_id)
+        counter = 0
+        self.driver = None
+        while not self.driver and counter <= 3:
+            try:
+                self.driver = webdriver.Remote(capabilities[self.environment]['executor'],
+                                               capabilities[self.environment]['capabilities'])
+                self.driver.implicitly_wait(self.implicitly_wait)
+                BaseView(self.driver).accept_agreements()
+                test_suite_data.current_test.jobs.append(self.driver.session_id)
+                break
+            except WebDriverException:
+                counter += 1
 
     def teardown_method(self, method):
         if self.environment == 'sauce':
             self.print_sauce_lab_info(self.driver)
         try:
             self.driver.quit()
-        except WebDriverException:
+        except (WebDriverException, AttributeError):
             pass
 
 
@@ -130,6 +145,8 @@ class LocalMultipleDeviceTestCase(AbstractTestCase):
         for driver in range(quantity):
             self.drivers[driver] = webdriver.Remote(self.executor_local, capabilities[driver])
             self.drivers[driver].implicitly_wait(self.implicitly_wait)
+            BaseView(self.drivers[driver]).accept_agreements()
+            test_suite_data.current_test.jobs.append(self.drivers[driver].session_id)
 
     def teardown_method(self, method):
         for driver in self.drivers:
@@ -143,10 +160,10 @@ class SauceMultipleDeviceTestCase(AbstractTestCase):
 
     @classmethod
     def setup_class(cls):
-        cls.loop = asyncio.get_event_loop()
+        cls.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(cls.loop)
 
     def setup_method(self, method):
-        self.update_test_info_dict()
         self.drivers = dict()
 
     def create_drivers(self, quantity=2):
@@ -156,14 +173,15 @@ class SauceMultipleDeviceTestCase(AbstractTestCase):
                                                     self.capabilities_sauce_lab))
         for driver in range(quantity):
             self.drivers[driver].implicitly_wait(self.implicitly_wait)
-            test_data.test_info[test_data.test_name]['jobs'].append(self.drivers[driver].session_id)
+            BaseView(self.drivers[driver]).accept_agreements()
+            test_suite_data.current_test.jobs.append(self.drivers[driver].session_id)
 
     def teardown_method(self, method):
         for driver in self.drivers:
-            self.print_sauce_lab_info(self.drivers[driver])
             try:
+                self.print_sauce_lab_info(self.drivers[driver])
                 self.drivers[driver].quit()
-            except WebDriverException:
+            except (WebDriverException, AttributeError):
                 pass
 
     @classmethod

@@ -24,19 +24,21 @@
                       :handler   #(re-frame/dispatch [:wallet/toggle-flashlight])}]]])
 
 (defn- viewfinder [{:keys [height width]} size]
-  [react/view {:style styles/viewfinder-port}
-   [react/view {:style (styles/viewfinder-translucent height width size :top)}]
-   [react/view {:style (styles/viewfinder-translucent height width size :right)}]
-   [react/view {:style (styles/viewfinder-translucent height width size :bottom)}]
-   [react/view {:style (styles/viewfinder-translucent height width size :left)}]
-   [react/image {:source {:uri :corner_left_top}
-                 :style  (styles/corner-left-top height width size)}]
-   [react/image {:source {:uri :corner_right_top}
-                 :style  (styles/corner-right-top height width size)}]
-   [react/image {:source {:uri :corner_left_bottom}
-                 :style  (styles/corner-left-bottom height width size)}]
-   [react/image {:source {:uri :corner_right_bottom}
-                 :style  (styles/corner-right-bottom height width size)}]])
+  (let [height (cond-> height
+                   platform/iphone-x? (- 78))]
+    [react/view {:style styles/viewfinder-port}
+     [react/view {:style (styles/viewfinder-translucent height width size :top)}]
+     [react/view {:style (styles/viewfinder-translucent height width size :right)}]
+     [react/view {:style (styles/viewfinder-translucent height width size :bottom)}]
+     [react/view {:style (styles/viewfinder-translucent height width size :left)}]
+     [react/image {:source {:uri :corner_left_top}
+                   :style  (styles/corner-left-top height width size)}]
+     [react/image {:source {:uri :corner_right_top}
+                   :style  (styles/corner-right-top height width size)}]
+     [react/image {:source {:uri :corner_left_bottom}
+                   :style  (styles/corner-left-bottom height width size)}]
+     [react/image {:source {:uri :corner_right_bottom}
+                   :style  (styles/corner-right-bottom height width size)}]]))
 
 (defn- size [{:keys [height width]}]
   (int (* 2 (/ (min height width) 3))))
@@ -48,7 +50,8 @@
     [react/view {:style styles/qr-code}
      [status-bar/status-bar {:type :transparent}]
      [toolbar-view camera-flashlight]
-     [react/text {:style (styles/qr-code-text dimensions)}
+     [react/text {:style               (styles/qr-code-text dimensions)
+                  :accessibility-label :scan-qr-code-with-wallet-address-text}
       (i18n/label :t/scan-qr-code)]
      [react/view {:style          styles/qr-container
                   :pointer-events :none}
@@ -61,5 +64,7 @@
                        :onBarCodeRead #(re-frame/dispatch [:wallet/fill-request-from-url (camera/get-qr-code-data %) nil])}]]
       [viewfinder dimensions (size dimensions)]]
      [bottom-buttons/bottom-button
-      [button/button {:disabled? false :on-press #(re-frame/dispatch [:navigate-back])}
+      [button/button {:disabled?           false
+                      :on-press            #(re-frame/dispatch [:navigate-back])
+                      :accessibility-label :cancel-button}
        (i18n/label :t/cancel)]]]))

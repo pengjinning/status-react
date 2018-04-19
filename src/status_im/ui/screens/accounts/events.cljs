@@ -1,8 +1,6 @@
 (ns status-im.ui.screens.accounts.events
-  (:require [status-im.data-store.accounts :as accounts-store]
-            [re-frame.core :as re-frame]
+  (:require [re-frame.core :as re-frame]
             [taoensso.timbre :as log]
-            [status-im.protocol.core :as protocol]
             [status-im.native-module.core :as status]
             [status-im.utils.types :refer [json->clj]]
             [status-im.utils.identicon :refer [identicon]]
@@ -13,29 +11,14 @@
             [status-im.ui.screens.accounts.statuses :as statuses]
             [status-im.utils.signing-phrase.core :as signing-phrase]
             [status-im.utils.gfycat.core :refer [generate-gfy]]
-            [status-im.utils.hex :as utils.hex]))
-
-;;;; Helper fns
-
-(defn create-account
-  "Takes db and password, creates map of effects describing account creation"
-  [db password]
-  {:db              (assoc db :accounts/creating-account? true)
-   ::create-account password
-   ;; TODO(janherich): get rid of this shitty delayed dispatch once sending commands/msgs is refactored
-   :dispatch-later  [{:ms 400 :dispatch [:account-generation-message]}]})
+            [status-im.utils.hex :as utils.hex]
+            [status-im.constants :as constants]
+            [status-im.transport.message.v1.contact :as message.contact]
+            [status-im.transport.message.core :as transport]
+            status-im.ui.screens.accounts.create.navigation
+            [status-im.chat.models :as chat.models]))
 
 ;;;; COFX
-
-(re-frame/reg-cofx
-  :get-new-keypair!
-  (fn [coeffects _]
-    (assoc coeffects :keypair (protocol/new-keypair!))))
-
-(re-frame/reg-cofx
-  ::get-all-accounts
-  (fn [coeffects _]
-    (assoc coeffects :all-accounts (accounts-store/get-all))))
 
 (re-frame/reg-cofx
   ::get-signing-phrase
@@ -50,56 +33,29 @@
 ;;;; FX
 
 (re-frame/reg-fx
-  ::save-account
-  (fn [account]
-    (accounts-store/save account true)))
-
-(re-frame/reg-fx
   ::create-account
   (fn [password]
     (status/create-account
      password
      #(re-frame/dispatch [::account-created (json->clj %) password]))))
 
-(re-frame/reg-fx
-  ::broadcast-account-update
-  (fn [{:keys [current-public-key web3 name photo-path status
-               updates-public-key updates-private-key]}]
-    (when web3
-      (protocol/broadcast-profile!
-       {:web3    web3
-        :message {:from       current-public-key
-                  :message-id (random/id)
-                  :keypair    {:public  updates-public-key
-                               :private updates-private-key}
-                  :payload    {:profile {:name          name
-                                         :status        status
-                                         :profile-image photo-path}}}}))))
-
-(re-frame/reg-fx
-  ::send-keys-update
-  (fn [{:keys [web3 current-public-key contacts
-               updates-public-key updates-private-key]}]
-    (doseq [id (handlers/identities contacts)]
-      (protocol/update-keys!
-       {:web3    web3
-        :message {:from       current-public-key
-                  :to         id
-                  :message-id (random/id)
-                  :payload    {:keypair {:public  updates-public-key
-                                         :private updates-private-key}}}}))))
 ;;;; Handlers
+
+(handlers/register-handler-fx
+  :create-account
+  (fn [{{:accounts/keys [create] :as db} :db} _]
+    {:db (update db :accounts/create assoc :step :account-creating :error nil)
+     ::create-account (:password create)}))
 
 (defn add-account
   "Takes db and new account, creates map of effects describing adding account to database and realm"
-  [{:keys [network inbox/wnode] :networks/keys [networks] :as db} {:keys [address] :as account}]
+  [{:keys [network] :networks/keys [networks] :as db} {:keys [address] :as account}]
   (let [enriched-account (assoc account
                                 :network  network
                                 :networks networks
-                                :wnode    wnode
                                 :address  address)]
-    {:db            (assoc-in db [:accounts/accounts address] enriched-account)
-     ::save-account enriched-account}))
+    {:db           (assoc-in db [:accounts/accounts address] enriched-account)
+     :data-store/save-account enriched-account}))
 
 ;; TODO(janherich) we have this handler here only because of the tests, refactor/improve tests ASAP
 (handlers/register-handler-fx
@@ -109,36 +65,26 @@
 
 (handlers/register-handler-fx
   ::account-created
-  [re-frame/trim-v (re-frame/inject-cofx :get-new-keypair!)
-   (re-frame/inject-cofx ::get-signing-phrase) (re-frame/inject-cofx ::get-status)]
-  (fn [{:keys [keypair signing-phrase status db] :as cofx} [{:keys [pubkey address mnemonic]} password]]
+  [re-frame/trim-v (re-frame/inject-cofx ::get-signing-phrase) (re-frame/inject-cofx ::get-status)]
+  (fn [{:keys [signing-phrase status db] :as cofx} [{:keys [pubkey address mnemonic]} password]]
     (let [normalized-address (utils.hex/normalize-hex address)
           account            {:public-key          pubkey
                               :address             normalized-address
                               :name                (generate-gfy pubkey)
                               :status              status
                               :signed-up?          true
-                              :updates-public-key  (:public keypair)
-                              :updates-private-key (:private keypair)
                               :photo-path          (identicon pubkey)
                               :signing-phrase      signing-phrase
-                              :settings            {:wallet {:visible-tokens {:testnet #{:STT} :mainnet #{:SNT}}}}}]
+                              :mnemonic            mnemonic
+                              :settings            constants/default-account-settings}]
       (log/debug "account-created")
       (when-not (str/blank? pubkey)
         (-> (add-account db account)
-            (assoc :dispatch-n [[:show-mnemonic mnemonic signing-phrase]
-                                [:login-account normalized-address password true]]))))))
-
-(handlers/register-handler-fx
-  :create-new-account-handler
-  (fn [_ _]
-    {:dispatch-n [[:initialize-db]
-                  [:load-accounts]
-                  [:check-console-chat true]]}))
+            (assoc :dispatch [:login-account normalized-address password]))))))
 
 (handlers/register-handler-fx
   :load-accounts
-  [(re-frame/inject-cofx ::get-all-accounts)]
+  [(re-frame/inject-cofx :data-store/get-all-accounts)]
   (fn [{:keys [db all-accounts]} _]
     (let [accounts (->> all-accounts
                         (map (fn [{:keys [address] :as account}]
@@ -156,51 +102,73 @@
   (fn [{{:accounts/keys [accounts] :networks/keys [networks] :as db} :db} [_ id]]
     (let [current-account (get accounts id)
           new-account (assoc current-account :networks networks)]
-      {:db            (assoc-in db [:accounts/accounts id] new-account)
-       ::save-account new-account})))
+      {:db           (assoc-in db [:accounts/accounts id] new-account)
+       :data-store/save-account new-account})))
 
-(defn update-wallet-settings [{:accounts/keys [current-account-id accounts] :as db} settings]
-  (let [new-account (-> (get accounts current-account-id)
-                        (assoc :settings settings))]
-    {:db            (assoc-in db [:accounts/accounts current-account-id] new-account)
-     ::save-account new-account}))
+(defn update-settings [settings {:keys [db] :as cofx}]
+  (let [{:accounts/keys [current-account-id accounts]} db
+        new-account                                    (-> (get accounts current-account-id)
+                                                           (assoc :settings settings))]
+    {:db                      (assoc-in db [:accounts/accounts current-account-id] new-account)
+     :data-store/save-account new-account}))
 
 (defn account-update
-  "Takes effects (containing :db) + new account fields, adds all effects necessary for account update."
-  [{{:accounts/keys [accounts current-account-id] :as db} :db :as fx} new-account-fields]
-  (let [current-account (get accounts current-account-id)
-        new-account     (merge current-account new-account-fields)]
-    (-> fx
-        (assoc-in [:db :accounts/accounts current-account-id] new-account)
-        (assoc ::save-account new-account
-               ::broadcast-account-update (merge (select-keys db [:current-public-key :web3])
-                                                 (select-keys new-account [:name :photo-path :status
-                                                                           :updates-public-key :updates-private-key]))))))
-
-(handlers/register-handler-fx
-  :account-update-keys
-  [(re-frame/inject-cofx :get-new-keypair!)]
-  (fn [{:keys [db keypair now]} _]
-    (let [{:accounts/keys [accounts current-account-id]} db
-          {:keys [public private]} keypair
-          current-account (get accounts current-account-id)
-          new-account     (merge current-account {:updates-public-key  public
-                                                  :updates-private-key private
-                                                  :last-updated        now})]
-      {:db                (assoc-in db [:accounts/accounts current-account-id] new-account)
-       ::save-account     new-account
-       ::send-keys-update (merge
-                           (select-keys db [:web3 :current-public-key :contacts])
-                           (select-keys new-account [:updates-public-key
-                                                     :updates-private-key]))})))
+  "Takes effects (containing :db) + new account fields, adds all effects necessary for account update.
+  Optionally, one can specify event to be dispatched after fields are persisted."
+  ([new-account-fields cofx]
+   (account-update new-account-fields nil cofx))
+  ([new-account-fields after-update-event {{:accounts/keys [accounts current-account-id] :as db} :db :as cofx}]
+   (let [current-account (get accounts current-account-id)
+         new-account     (merge current-account new-account-fields)
+         fx              {:db                      (assoc-in db [:accounts/accounts current-account-id] new-account)
+                          :data-store/save-account (assoc new-account :after-update-event after-update-event)}
+         {:keys [name photo-path]} new-account]
+     (if (or (:name new-account-fields) (:photo-path new-account-fields))
+       (handlers/merge-fx cofx fx (transport/send (message.contact/ContactUpdate. name photo-path) nil))
+       fx))))
 
 (handlers/register-handler-fx
   :send-account-update-if-needed
-  (fn [{{:accounts/keys [accounts current-account-id] :as db} :db now :now} _]
+  (fn [{{:accounts/keys [accounts current-account-id] :as db} :db now :now :as cofx} _]
     (let [{:keys [last-updated]} (get accounts current-account-id)
-          needs-update? (> (- now last-updated) time/week)]
+          needs-update?          (> (- now last-updated) time/week)]
       (log/info "Need to send account-update: " needs-update?)
       (when needs-update?
         ;; TODO(janherich): this is very strange and misleading, need to figure out why it'd necessary to update
         ;; account with network update when last update was more then week ago
-        (account-update {:db db} nil)))))
+        (account-update nil cofx)))))
+
+(handlers/register-handler-fx
+  :account-set-name
+  (fn [{{:accounts/keys [create] :as db} :db :as cofx} _]
+    (handlers/merge-fx cofx
+                       {:db       (assoc-in db [:accounts/create :show-welcome?] true)
+                        :dispatch [:navigate-to-clean :usage-data [:account-finalized]]}
+                       (account-update {:name (:name create)}))))
+
+(handlers/register-handler-fx
+  :account-finalized
+  (fn [{db :db} _]
+    {:db db
+     :dispatch-n [[:navigate-to-clean :home]
+                  [:request-notifications]]}))
+
+(handlers/register-handler-fx
+  :account-set-input-text
+  (fn [{db :db} [_ input-key text]]
+    {:db (update db :accounts/create merge {input-key text :error nil})}))
+
+(handlers/register-handler-fx
+  :update-sign-in-time
+  (fn [{db :db now :now :as cofx} _]
+    (account-update {:last-sign-in now} cofx)))
+
+(handlers/register-handler-fx
+  :reset-account-creation
+  (fn [{db :db} _]
+    {:db (update db :accounts/create assoc :step :enter-password :password nil :password-confirm nil :error nil)}))
+
+(handlers/register-handler-fx
+  :switch-dev-mode
+  (fn [cofx [_ dev-mode]]
+    (account-update {:dev-mode? dev-mode} cofx)))

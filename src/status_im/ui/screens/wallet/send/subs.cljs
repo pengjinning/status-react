@@ -58,7 +58,13 @@
     (when-let [unsigned-transaction (get unsigned-transactions
                                          (:id send-transaction))]
       (merge send-transaction
-             unsigned-transaction))))
+             unsigned-transaction
+             {:gas       (or (:gas unsigned-transaction) (:gas send-transaction))
+              :gas-price (or (:gas-price unsigned-transaction) (:gas-price send-transaction))}))))
+
+(re-frame/reg-sub :wallet/edit
+  :<- [:wallet]
+  :edit)
 
 (defn sign-enabled? [amount-error to amount]
   (and
@@ -75,7 +81,7 @@
 
 (re-frame/reg-sub :wallet.send/unsigned-transaction
   :<- [::unsigned-transaction]
-  :<- [:contacts/by-address]
+  :<- [:get-contacts-by-address]
   :<- [:balance]
   (fn [[{:keys [value to symbol] :as transaction} contacts balance]]
     (when transaction

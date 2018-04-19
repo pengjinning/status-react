@@ -13,15 +13,12 @@ from views.base_element import BaseButton, BaseElement, BaseEditBox, BaseText
 class BackButton(BaseButton):
     def __init__(self, driver):
         super(BackButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector("//*[@content-desc='toolbar-back-button']")
+        self.locator = self.Locator.accessibility_id('back-button')
 
     def click(self, times_to_click: int = 1):
         for _ in range(times_to_click):
-            try:
-                self.find_element().click()
-                info('Tap on %s' % self.name)
-            except (NoSuchElementException, TimeoutException):
-                pass
+            self.find_element().click()
+            info('Tap on %s' % self.name)
         return self.navigate()
 
 
@@ -45,10 +42,16 @@ class DenyButton(BaseButton):
         self.locator = self.Locator.xpath_selector("//*[@text='Deny']")
 
 
+class DeleteButton(BaseButton):
+    def __init__(self, driver):
+        super(DeleteButton, self).__init__(driver)
+        self.locator = self.Locator.xpath_selector("//*[@text='DELETE']")
+
+
 class YesButton(BaseButton):
     def __init__(self, driver):
         super(YesButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector("//*[@text='Yes']")
+        self.locator = self.Locator.xpath_selector("//*[@text='YES']")
 
 
 class NoButton(BaseButton):
@@ -63,16 +66,16 @@ class OkButton(BaseButton):
         self.locator = self.Locator.xpath_selector("//*[@text='OK']")
 
 
-class ContinueButtonAPK(BaseButton):
+class ContinueButton(BaseButton):
     def __init__(self, driver):
-        super(ContinueButtonAPK, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector("//*[@text='Continue']")
+        super(ContinueButton, self).__init__(driver)
+        self.locator = self.Locator.xpath_selector("//*[@text='CONTINUE']")
 
 
 class HomeButton(BaseButton):
     def __init__(self, driver):
         super(HomeButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector("//*[@text='Home']/..")
+        self.locator = self.Locator.accessibility_id('home-tab-button')
 
     def navigate(self):
         from views.home_view import HomeView
@@ -82,7 +85,12 @@ class HomeButton(BaseButton):
 class WalletButton(BaseButton):
     def __init__(self, driver):
         super(WalletButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector("//*[@text='Wallet']/..")
+        self.locator = self.Locator.accessibility_id('wallet-tab-button')
+
+    def click(self):
+        from views.wallet_view import TransactionsButton
+        self.click_until_presence_of_element(desired_element=TransactionsButton(self.driver), attempts=3)
+        return self.navigate()
 
     def navigate(self):
         from views.wallet_view import WalletView
@@ -92,7 +100,7 @@ class WalletButton(BaseButton):
 class ProfileButton(BaseButton):
     def __init__(self, driver):
         super(ProfileButton, self).__init__(driver)
-        self.locator = self.Locator.xpath_selector("//*[@text='Profile']/..")
+        self.locator = self.Locator.accessibility_id('profile-tab-button')
 
     def navigate(self):
         from views.profile_view import ProfileView
@@ -117,7 +125,7 @@ class DoneButton(BaseButton):
     def __init__(self, driver):
         super(DoneButton, self).__init__(driver)
         self.locator = self.Locator.xpath_selector(
-            "//android.widget.TextView[@text='Done']")
+            "//android.widget.TextView[@text='DONE']")
 
 
 class AppsButton(BaseButton):
@@ -133,13 +141,23 @@ class StatusAppIcon(BaseButton):
             "//*[@text='Status']")
 
 
+class SendMessageButton(BaseButton):
+    def __init__(self, driver):
+        super(SendMessageButton, self).__init__(driver)
+        self.locator = self.Locator.accessibility_id("send-message-button")
+
+    def click(self):
+        self.find_element().click()
+        info('Tap on %s' % self.name)
+
+
 class BaseView(object):
     def __init__(self, driver):
         self.driver = driver
 
+        self.send_message_button = SendMessageButton(self.driver)
         self.home_button = HomeButton(self.driver)
-        self.button = WalletButton(self.driver)
-        self.wallet_button = self.button
+        self.wallet_button = WalletButton(self.driver)
         self.profile_button = ProfileButton(self.driver)
 
         self.yes_button = YesButton(self.driver)
@@ -147,11 +165,12 @@ class BaseView(object):
         self.back_button = BackButton(self.driver)
         self.allow_button = AllowButton(self.driver)
         self.deny_button = DenyButton(self.driver)
-        self.continue_button_apk = ContinueButtonAPK(self.driver)
-        self.ok_button_apk = OkButton(self.driver)
+        self.continue_button = ContinueButton(self.driver)
+        self.ok_button = OkButton(self.driver)
         self.next_button = NextButton(self.driver)
         self.save_button = SaveButton(self.driver)
         self.done_button = DoneButton(self.driver)
+        self.delete_button = DeleteButton(self.driver)
 
         self.apps_button = AppsButton(self.driver)
         self.status_app_icon = StatusAppIcon(self.driver)
@@ -163,19 +182,27 @@ class BaseView(object):
             'text': BaseText
         }
 
+    def accept_agreements(self):
+        for button in self.ok_button, self.continue_button:
+            try:
+                button.wait_for_element(15)
+                button.click()
+            except (NoSuchElementException, TimeoutException):
+                pass
+
     @property
     def logcat(self):
         return self.driver.get_log("logcat")
 
     def confirm(self):
         info("Tap 'Confirm' on native keyboard")
-        self.driver.keyevent(66)
+        self.driver.press_keycode(66)
 
     def send_as_keyevent(self, string):
         keys = {'0': 7, '1': 8, '2': 9, '3': 10, '4': 11, '5': 12, '6': 13, '7': 14, '8': 15, '9': 16,
 
                 ',': 55, '-': 69, '+': 81, '.': 56, '/': 76, '\\': 73, ';': 74, ' ': 62,
-                '[': 71, ']': 72, '=': 70,
+                '[': 71, ']': 72, '=': 70, '\n': 66,
 
                 'a': 29, 'b': 30, 'c': 31, 'd': 32, 'e': 33, 'f': 34, 'g': 35, 'h': 36, 'i': 37, 'j': 38,
                 'k': 39, 'l': 40, 'm': 41, 'n': 42, 'o': 43, 'p': 44, 'q': 45, 'r': 46, 's': 47, 't': 48,
@@ -183,7 +210,7 @@ class BaseView(object):
         for i in string:
             info("Tap '%s' on native keyboard" % i)
             time.sleep(1)
-            self.driver.keyevent(keys[i])
+            self.driver.press_keycode(keys[i])
 
     def find_full_text(self, text, wait_time=60):
         info("Looking for full text: '%s'" % text)
@@ -197,7 +224,7 @@ class BaseView(object):
         element.locator = element.Locator.xpath_selector('//*[contains(@text, "' + text + '")]')
         return element.wait_for_element(wait_time)
 
-    def element_by_text(self, text, element_type='base'):
+    def element_by_text(self, text, element_type='button'):
         info("Looking for an element by text: '%s'" % text)
         element = self.element_types[element_type](self.driver)
         element.locator = element.Locator.xpath_selector('//*[@text="' + text + '"]')
@@ -224,6 +251,14 @@ class BaseView(object):
     def get_send_transaction_view(self):
         from views.send_transaction_view import SendTransactionView
         return SendTransactionView(self.driver)
+
+    def get_base_web_view(self):
+        from views.web_views.base_web_view import BaseWebView
+        return BaseWebView(self.driver)
+
+    def get_profile_view(self):
+        from views.profile_view import ProfileView
+        return ProfileView(self.driver)
 
     def get_unique_amount(self):
         return '0.0%s' % datetime.now().strftime('%-m%-d%-H%-M%-S').strip('0')

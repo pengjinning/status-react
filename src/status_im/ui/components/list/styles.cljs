@@ -68,7 +68,7 @@
 
 (def right-item-wrapper
   {:justify-content :center
-   :margin-right    horizontal-margin})
+   :margin-right    12})
 
 (def base-separator
   {:height           1
@@ -96,3 +96,31 @@
                      :margin-bottom 3}
    :ios             {:margin-top    10
                      :margin-bottom 2}})
+
+(def action-list
+  {:background-color colors/blue})
+
+(def action
+  {:background-color colors/white-transparent
+   :border-radius    50})
+
+(def action-disabled
+  {:background-color colors/gray-lighter})
+
+(def action-label
+  {:color colors/white})
+
+(def action-label-disabled
+  {:color colors/gray})
+
+(def action-separator
+  {:height           1
+   :background-color colors/white-light-transparent
+   :margin-left      70})
+
+(def list-with-label-wrapper
+  {:margin-top        26
+   :margin-horizontal 16})
+
+(def label
+  {:color colors/gray})

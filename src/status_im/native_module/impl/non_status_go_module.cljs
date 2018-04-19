@@ -36,12 +36,12 @@
                           :messages {},
                           :returned {:markup ["text"
                                               {:style
-                                               {:color            "black",
-                                                :fontSize         8,
-                                                :letterSpacing    1,
-                                                :marginBottom     2,
-                                                :marginHorizontal 0,
-                                                :marginTop        10}}
+                                               {:color             "black",
+                                                :font-size         8,
+                                                :letter-spacing    1,
+                                                :margin-bottom     2,
+                                                :margin-horizontal 0,
+                                                :margin-top        10}}
                                               "●●●●●●●●●●"]}}})
       :else (callback {:result nil})))
   (-call-function! [this params])
@@ -58,6 +58,8 @@
     (impl/module-initialized!))
   (-should-move-to-internal-storage? [this callback]
     (impl/should-move-to-internal-storage? callback))
-  (-notify [this token callback])
+  (-notify-users [this {:keys [message payload tokens] :as m} callback])
   (-add-peer [this enode callback])
-  (-close-application [this]))
+  (-close-application [this])
+  (-connection-change [this data])
+  (-app-state-change [this state]))

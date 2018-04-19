@@ -3,7 +3,6 @@
 #import "React/RCTBridge.h"
 #import "React/RCTEventDispatcher.h"
 #import <Statusgo/Statusgo.h>
-@import Instabug;
 
 @interface NSDictionary (BVJSONString)
 -(NSString*) bv_jsonStringWithPrettyPrint:(BOOL) prettyPrint;
@@ -205,6 +204,7 @@ RCT_EXPORT_METHOD(startNode:(NSString *)configString) {
     [resultingConfigJson setValue:logUrl.path forKey:@"LogFile"];
     [resultingConfigJson setValue:([logLevel length] == 0 ? [NSString stringWithUTF8String: "ERROR"] : logLevel) forKey:@"LogLevel"];
     
+    [resultingConfigJson setValue:[NSNumber numberWithBool:YES] forKeyPath:@"WhisperConfig.LightClient"];
     if(upstreamURL != nil) {
         [resultingConfigJson setValue:[NSNumber numberWithBool:YES] forKeyPath:@"UpstreamConfig.Enabled"];
         [resultingConfigJson setValue:upstreamURL forKeyPath:@"UpstreamConfig.URL"];
@@ -222,9 +222,7 @@ RCT_EXPORT_METHOD(startNode:(NSString *)configString) {
         [dict setObject:[NSNumber numberWithInt:511] forKey:NSFilePosixPermissions];
         [fileManager createFileAtPath:logUrl.path contents:nil attributes:dict];
     }
-#ifndef DEBUG
-    [Instabug addFileAttachmentWithURL:logUrl];
-#endif
+
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
                    ^(void)
                    {
@@ -276,14 +274,16 @@ RCT_EXPORT_METHOD(createAccount:(NSString *)password
 }
 
 ////////////////////////////////////////////////////////////////////
-#pragma mark - Notify method
-//////////////////////////////////////////////////////////////////// notify
-RCT_EXPORT_METHOD(notify:(NSString *)token
+#pragma mark - NotifyUsers method
+//////////////////////////////////////////////////////////////////// notifyUsers
+RCT_EXPORT_METHOD(notifyUsers:(NSString *)message
+                  payloadJSON:(NSString *)payloadJSON
+                  tokensJSON:(NSString *)tokensJSON
                   callback:(RCTResponseSenderBlock)callback) {
-    char * result = Notify((char *) [token UTF8String]);
+    char * result = NotifyUsers((char *) [message UTF8String], (char *) [payloadJSON UTF8String], (char *) [tokensJSON UTF8String]);
     callback(@[[NSString stringWithUTF8String: result]]);
 #if DEBUG
-    NSLog(@"Notify() method called");
+    NSLog(@"NotifyUsers() method called");
 #endif
 }
 
@@ -398,6 +398,22 @@ RCT_EXPORT_METHOD(sendWeb3Request:(NSString *)payload
 
 RCT_EXPORT_METHOD(closeApplication) {
     exit(0);
+}
+
+
+RCT_EXPORT_METHOD(connectionChange:(NSString *)type
+                       isExpensive:(BOOL)isExpensive) {
+#if DEBUG
+    NSLog(@"ConnectionChange() method called");
+#endif
+    ConnectionChange((char *) [type UTF8String], isExpensive? 1 : 0);
+}
+
+RCT_EXPORT_METHOD(appStateChange:(NSString *)type) {
+#if DEBUG
+    NSLog(@"AppStateChange() method called");
+#endif
+    AppStateChange((char *) [type UTF8String]);
 }
 
 + (void)signalEvent:(const char *) signal

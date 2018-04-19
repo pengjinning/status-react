@@ -1,6 +1,5 @@
 (ns status-im.data-store.realm.browser
-  (:require [status-im.data-store.realm.core :as realm]
-    [status-im.utils.random :refer [timestamp]])
+  (:require [status-im.data-store.realm.core :as realm])
   (:refer-clojure :exclude [exists?]))
 
 (defn get-all
@@ -13,6 +12,11 @@
 (defn save
   [browser update?]
   (realm/save @realm/account-realm :browser browser update?))
+
+(defn delete
+  [browser-id]
+  (when-let [browser (realm/get-one-by-field @realm/account-realm :browser :browser-id browser-id)]
+    (realm/delete @realm/account-realm browser)))
 
 (defn exists?
   [browser-id]

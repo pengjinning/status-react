@@ -45,21 +45,12 @@ class ConsoleView(BaseView):
         self.recover_button = RecoverButton(self.driver)
         self.chat_request_input = ChatRequestInput(self.driver)
 
-        self.accept_agreements()
-
-    def accept_agreements(self):
-        for i in self.ok_button_apk, self.continue_button_apk:
-            try:
-                i.click()
-            except (NoSuchElementException, TimeoutException):
-                pass
-
     def create_user(self):
         self.request_password_icon.click()
         self.chat_request_input.send_keys("qwerty1234")
-        self.confirm()
+        self.send_message_button.click()
         self.chat_request_input.send_keys("qwerty1234")
-        self.confirm()
+        self.send_message_button.click()
         self.find_full_text(
             "Here is your signing phrase. You will use it to verify your transactions. Write it down and keep it safe!")
 
@@ -73,4 +64,4 @@ class ConsoleView(BaseView):
         recovered_user.click()
         recover_access_view.password_input.send_keys(password)
         recover_access_view.sign_in_button.click()
-        recover_access_view.find_full_text('Wallet', 30)
+        recover_access_view.find_full_text('Wallet', 60)

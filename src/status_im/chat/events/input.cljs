@@ -2,13 +2,12 @@
   (:require [clojure.string :as string]
             [re-frame.core :as re-frame]
             [taoensso.timbre :as log]
-            [status-im.chat.constants :as constants] 
+            [status-im.chat.constants :as constants]
             [status-im.chat.models :as model]
             [status-im.chat.models.input :as input-model]
             [status-im.chat.models.commands :as commands-model]
             [status-im.chat.models.message :as message-model]
             [status-im.chat.events.commands :as commands-events]
-            [status-im.chat.events.animation :as animation-events]
             [status-im.bots.events :as bots-events]
             [status-im.ui.components.react :as react-comp]
             [status-im.utils.datetime :as time]
@@ -57,7 +56,7 @@
         chat-text (if append?
                     (str current-input new-input)
                     new-input)]
-    (cond-> db
+    (cond-> (model/set-chat-ui-props db {:validation-messages nil})
       true
       (assoc-in [:chats current-chat-id :input-text] (input-model/text->emoji chat-text))
 
@@ -147,12 +146,12 @@
         {:call-jail {:jail-id owner-id
                      :path    path
                      :params  params
-                     :callback-events-creator (fn [jail-response]
-                                                [[:chat-received-message/bot-response
-                                                  {:chat-id         current-chat-id
-                                                   :command         command
-                                                   :parameter-index parameter-index}
-                                                  jail-response]])}}))))
+                     :callback-event-creator (fn [jail-response]
+                                               [:chat-received-message/bot-response
+                                                {:chat-id         current-chat-id
+                                                 :command         command
+                                                 :parameter-index parameter-index}
+                                                jail-response])}}))))
 
 (defn chat-input-focus
   "Returns fx for focusing on active chat input reference"
@@ -180,16 +179,13 @@
 
 (defn select-chat-input-command
   "Selects command + (optional) arguments as input for active chat"
-  [{:keys [current-chat-id chat-ui-props] :as db}
-   {:keys [prefill prefill-bot-db sequential-params name owner-id] :as command} metadata prevent-auto-focus?]
-  (let [db' (-> db
+  [{:keys [prefill prefill-bot-db sequential-params name owner-id] :as command} metadata prevent-auto-focus? {:keys [db]}]
+  (let [{:keys [current-chat-id chat-ui-props]} db
+        db' (-> db
                 (bots-events/clear-bot-db owner-id)
                 clear-seq-arguments
                 (model/set-chat-ui-props {:show-suggestions?   false
-                                          :show-emoji?         false
-                                          :result-box          nil
-                                          :validation-messages nil
-                                          :prev-command        name})
+                                          :result-box          nil})
                 (set-chat-input-metadata metadata)
                 (set-chat-input-text (str (commands-model/command-name command)
                                           constants/spacing-char
@@ -237,102 +233,67 @@
                                                 (min (count input-text)))]
               (merge fx (update-text-selection new-db new-selection)))))))
 
-(defn- request-command-data
-  "Requests command data from jail"
-  [{:keys [bot-db] :contacts/keys [contacts] :as db}
-   {{:keys [command
-            metadata
-            args]
-     :as   content} :content
-    :keys  [chat-id group-id jail-id data-type event-after-creator message-id current-time]}]
-  (let [{:keys [dapp? dapp-url name]} (get contacts chat-id)
-        metadata        (merge metadata
-                               (when dapp?
-                                 {:url  (i18n/get-contact-translated chat-id :dapp-url dapp-url)
-                                  :name (i18n/get-contact-translated chat-id :name name)}))
-        owner-id        (:owner-id command)
-        bot-db          (get bot-db owner-id)
-        params          (merge (input-model/args->params content)
-                               {:bot-db   bot-db
-                                :metadata metadata})
-
-        command-message {:command    command
-                         :params     params
-                         :to-message (:to-message-id metadata)
-                         :created-at current-time
-                         :id         message-id
-                         :chat-id    chat-id
-                         :jail-id    (or owner-id jail-id)}
-
-        request-data    {:message-id   message-id
-                         :chat-id      chat-id
-                         :group-id     group-id
-                         :jail-id      (or owner-id jail-id)
-                         :content      {:command       (:name command)
-                                        :scope-bitmask (:scope-bitmask command)
-                                        :params        params
-                                        :type          (:type command)}}]
-    (commands-events/request-command-message-data db request-data
-                                                  {:data-type             data-type
-                                                   :proceed-event-creator (partial event-after-creator
-                                                                                   command-message)})))
+;; function creating "message shaped" data from command, because that's what `request-command-message-data` expects
+(defn- command->message
+  [{:keys [bot-db current-chat-id chats]} {:keys [command] :as command-params}]
+  (message-model/add-message-type
+   {:chat-id current-chat-id
+    :content {:bot                   (:owner-id command)
+              :command               (:name command)
+              :type                  (:type command)
+              :command-scope-bitmask (:scope-bitmask command)
+              :params                (assoc (input-model/args->params command-params)
+                                            :bot-db (get bot-db (:owner-id command)))}}
+   (get chats current-chat-id)))
 
 (defn proceed-command
-  "Proceed with command processing by setting up and executing chain of events:
+  "Proceed with command processing by creating command message + setting up and executing chain of events:
   1. Params validation
-  2. Preview fetching"
-  [{:keys [current-chat-id chats] :as db} {{:keys [bot]} :command :as content} message-id current-time]
-  (let [params-template   {:content      content
-                           :chat-id      current-chat-id
-                           :group-id     (when (get-in chats [current-chat-id :group-chat])
-                                           current-chat-id)
-                           :jail-id      (or bot current-chat-id)
-                           :message-id   message-id
-                           :current-time current-time}
-        preview-params    (merge params-template
-                                 {:data-type           :preview
-                                  :event-after-creator (fn [command-message jail-response]
-                                                         [::send-command
-                                                          (assoc-in command-message [:command :preview] jail-response)])})
-        validation-params (merge params-template
-                                 {:data-type           :validator
-                                  :event-after-creator (fn [_ jail-response]
-                                                         [::proceed-validation
-                                                          jail-response
-                                                          [[::request-command-data preview-params]]])})]
-    (request-command-data db validation-params)))
+  2. Short preview fetching
+  3. Preview fetching"
+  [{:keys [bot-db current-chat-id chats] :as db} {:keys [command metadata] :as command-params} message-id current-time]
+  (let [message     (command->message db command-params)
+        cmd-params  {:command    command
+                     :params     (get-in message [:content :params])
+                     :to-message (:to-message-id metadata)
+                     :created-at current-time
+                     :id         message-id
+                     :chat-id    current-chat-id}
+        event-chain {:data-type             :validator
+                     :proceed-event-creator (fn [validation-response]
+                                              [::proceed-validation
+                                               validation-response
+                                               [[:request-command-message-data
+                                                 message
+                                                 {:data-type             :short-preview
+                                                  :proceed-event-creator (fn [short-preview]
+                                                                           [:request-command-message-data
+                                                                            message
+                                                                            {:data-type             :preview
+                                                                             :proceed-event-creator (fn [preview]
+                                                                                                      [::send-command
+                                                                                                       (update cmd-params :command merge
+                                                                                                               {:short-preview short-preview
+                                                                                                                :preview       preview})])}])}]]])}]
+    (commands-events/request-command-message-data db message event-chain)))
 
 ;;;; Handlers
-
-(handlers/register-handler-db
-  :update-input-data
-  (fn [db]
-    (input-model/modified-db-after-change db)))
 
 (handlers/register-handler-fx
   :set-chat-input-text
   [re-frame/trim-v]
   (fn [{:keys [db]} [text]]
-    (-> (set-chat-input-text db text)
-        (call-on-message-input-change))))
-
-(handlers/register-handler-db
-  :add-to-chat-input-text
-  [re-frame/trim-v]
-  (fn [db [text-to-add]]
-    (set-chat-input-text db text-to-add :append? true)))
+    (let [new-db (set-chat-input-text db text)
+          fx     (call-on-message-input-change new-db)]
+      (if-let [{:keys [command]} (input-model/selected-chat-command new-db)]
+        (merge fx (load-chat-parameter-box new-db command))
+        fx))))
 
 (handlers/register-handler-fx
   :select-chat-input-command
   [re-frame/trim-v]
-  (fn [{:keys [db]} [command metadata prevent-auto-focus?]]
-    (select-chat-input-command db command metadata prevent-auto-focus?)))
-
-(handlers/register-handler-db
-  :set-chat-input-metadata
-  [re-frame/trim-v]
-  (fn [db [data]]
-    (set-chat-input-metadata db data)))
+  (fn [cofx [command metadata prevent-auto-focus?]]
+    (select-chat-input-command command metadata prevent-auto-focus? cofx)))
 
 (handlers/register-handler-db
   :set-command-argument
@@ -354,60 +315,33 @@
       {::blur-rn-component cmp-ref})))
 
 (handlers/register-handler-fx
-  :load-chat-parameter-box
-  [re-frame/trim-v]
-  (fn [{:keys [db]} [command]]
-    (load-chat-parameter-box db command)))
-
-(handlers/register-handler-fx
   ::proceed-validation
   [re-frame/trim-v]
-  (fn [_ [{:keys [markup validationHandler parameters]} proceed-events]]
+  (fn [_ [{:keys [markup parameters]} proceed-events]]
     (let [error-events-creator (fn [validator-result]
                                  [[:set-chat-ui-props {:validation-messages  validator-result
                                                        :sending-in-progress? false}]])
-          events (cond
-                   markup
+          events (if markup
                    (error-events-creator markup)
-
-                   validationHandler
-                   [[::execute-validation-handler
-                     validationHandler parameters error-events-creator proceed-events]]
-
-                   :default
                    proceed-events)]
       {:dispatch-n events})))
 
 (handlers/register-handler-fx
-  ::execute-validation-handler
-  [re-frame/trim-v]
-  (fn [_ [validation-handler-name params error-events-creator proceed-events]]
-    (let [error-events (when-let [validator (input-model/validation-handler validation-handler-name)]
-                         (validator params error-events-creator))]
-      {:dispatch-n (or error-events proceed-events)})))
-
-(handlers/register-handler-fx
-  ::request-command-data
-  [re-frame/trim-v]
-  (fn [{:keys [db]} [command-params]]
-    (request-command-data db command-params)))
-
-(handlers/register-handler-fx
   ::send-command
   message-model/send-interceptors
-  (fn [cofx [{:keys [command] :as command-message}]]
-    (let [{{:keys          [current-public-key current-chat-id]
-            :accounts/keys [current-account-id] :as db} :db} cofx
-          fx (message-model/process-command cofx
+  (fn [{:keys [db] :as cofx} [command-message]]
+    (let [{:keys [current-public-key current-chat-id] :accounts/keys [current-account-id]} db
+          new-db (-> (model/set-chat-ui-props db {:sending-in-progress? false})
+                     (clear-seq-arguments)
+                     (set-chat-input-metadata nil)
+                     (set-chat-input-text nil))]
+      (merge {:db new-db}
+             (message-model/process-command (assoc cofx :db new-db)
                                             {:message  (get-in db [:chats current-chat-id :input-text])
                                              :command  command-message
                                              :chat-id  current-chat-id
                                              :identity current-public-key
-                                             :address  current-account-id})]
-      (update fx :db #(-> %
-                          (clear-seq-arguments)
-                          (set-chat-input-metadata nil)
-                          (set-chat-input-text nil))))))
+                                             :address  current-account-id})))))
 
 (defn command-complete?
   [chat-command]
@@ -437,13 +371,12 @@
                                                     (set-chat-input-text nil)))
                                 {:message-text input-text
                                  :chat-id      current-chat-id
-                                 :identity     current-public-key
-                                 :address      (:accounts/current-account-id db)})))
+                                 :identity     current-public-key})))
 
 
 (handlers/register-handler-fx
   :send-current-message
-  message-model/send-interceptors 
+  message-model/send-interceptors
   (fn [{{:keys [current-chat-id current-public-key] :as db} :db message-id :random-id current-time :now
         :as cofx} _]
     (when-not (get-in db [:chat-ui-props current-chat-id :sending-in-progress?])
@@ -460,12 +393,6 @@
             (command-complete-fx db chat-command message-id current-time)
             (command-not-complete-fx db input-text))
           (plain-text-message-fx db cofx input-text current-chat-id current-public-key))))))
-
-;; TODO: remove this handler and leave only helper fn once all invocations are refactored
-(handlers/register-handler-db
-  :clear-seq-arguments
-  (fn [db]
-    (clear-seq-arguments db)))
 
 (handlers/register-handler-db
   ::update-seq-arguments
@@ -484,15 +411,13 @@
           seq-arguments    (get-in chats [current-chat-id :seq-arguments])
           command          (-> (input-model/selected-chat-command db)
                                (assoc :args (into [] (conj seq-arguments text))))]
-      (request-command-data db {:content             command
-                                :chat-id             current-chat-id
-                                :jail-id             (or (get-in command [:command :bot]) current-chat-id)
-                                :data-type           :validator
-                                :event-after-creator (fn [_ jail-response]
-                                                       [::proceed-validation
-                                                        jail-response
-                                                        [[::update-seq-arguments current-chat-id]
-                                                         [:send-current-message]]])}))))
+      (commands-events/request-command-message-data db (command->message db command)
+                                                    {:data-type             :validator
+                                                     :proceed-event-creator (fn [validation-response]
+                                                                              [::proceed-validation
+                                                                               validation-response
+                                                                               [[::update-seq-arguments current-chat-id]
+                                                                                [:send-current-message]]])}))))
 
 (handlers/register-handler-db
   :set-chat-seq-arg-input-text

@@ -16,7 +16,7 @@
    :height           40
    :align-items      :center
    :justify-content  :center
-   :ios              {:background-color (or circle-color styles/color-light-blue-transparent)}})
+   :background-color (or circle-color styles/color-light-blue-transparent)})
 
 (def action-button-label-container
   {:padding-left 16})
@@ -31,7 +31,6 @@
    :android          {:padding-top    8
                       :padding-bottom 8}})
 
-
 (def action-button-label-disabled
   (merge action-button-label
          {:color styles/color-gray4}))
@@ -42,5 +41,5 @@
    :height           40
    :align-items      :center
    :justify-content  :center
-   :ios              {:background-color styles/color-light-gray}})
+   :background-color styles/color-light-gray})
 

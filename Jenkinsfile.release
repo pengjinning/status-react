@@ -21,18 +21,26 @@ node ('macos1'){
   def apkUrl = ''
   def ipaUrl = ''
   def testPassed = true
+  def version
 
   load "$HOME/env.groovy"
 
   try {
 
     stage('Git & Dependencies') {
-      slackSend color: 'good', message: 'Release build started. ' + env.BUILD_URL
-      git([url: 'https://github.com/status-im/status-react.git', branch: 'develop'])
-      // Checkout master because used for iOS Plist version information
+      slackSend color: 'good', message: BRANCH_NAME + ' build started. ' + env.BUILD_URL
+
+      if (!BRANCH_NAME.startsWith("release/")){
+        error "Wrong branch name format: " + BRANCH_NAME + ", but it should be `release/version`"
+      }
+
+      version = BRANCH_NAME.substring(8)
+      sh 'echo "' + version + '" > .version'
+
+      checkout scm
+
       sh 'git fetch --tags'
-      sh 'git checkout -- .'
-      sh 'git checkout develop'
+
       sh 'rm -rf node_modules'
       sh 'cp .env.prod .env'
       sh 'lein deps'
@@ -51,10 +59,13 @@ node ('macos1'){
     }
 
     stage('Build (Android)') {
-      sh 'cd android && ./gradlew assembleRelease'
+      sh 'cd android && ./gradlew assembleRelease -PreleaseVersion=' + version
     }
 
     stage('Build (iOS)') {
+      def build_no = sh(returnStdout: true, script: 'git rev-list --count HEAD').trim()
+      sh ('plutil -replace CFBundleShortVersionString  -string ' + version + ' ios/StatusIm/Info.plist')
+      sh ('plutil -replace CFBundleVersion  -string ' + build_no + ' ios/StatusIm/Info.plist')
       sh 'export RCT_NO_LAUNCH_PACKAGER=true && xcodebuild -workspace ios/StatusIm.xcworkspace -scheme StatusIm -configuration release -archivePath status clean archive'
       sh 'xcodebuild -exportArchive -exportPath status -archivePath status.xcarchive -exportOptionsPlist ~/archive.plist'
     }
@@ -69,7 +80,7 @@ node ('macos1'){
       def filename = 'im.status.ethereum-' + shortCommit + '.apk'
       def newArtifact = (artifact_dir + filename)
       sh ('mv ' + artifact + ' '  + newArtifact)
-      def uploadSpec = '{ "files": [ { "pattern": "*apk/' + filename + '", "target": "nightlies-local" }]}'
+      def uploadSpec = '{ "files": [ { "pattern": "*apk/release/' + filename + '", "target": "nightlies-local" }]}'
       def buildInfo = server.upload(uploadSpec)
       apkUrl = 'http://artifacts.status.im:8081/artifactory/nightlies-local/' + filename
 
@@ -80,7 +91,7 @@ node ('macos1'){
       withCredentials([string(credentialsId: 'diawi-token', variable: 'token')]) {
         def job = sh(returnStdout: true, script: 'curl https://upload.diawi.com/ -F token='+token+' -F file=@status/StatusIm.ipa -F find_by_udid=0 -F wall_of_apps=0 | jq -r ".job"').trim()
         sh 'sleep 10'
-        def hash = sh(returnStdout: true, script: "curl -vvv 'https://upload.diawi.com/status?token="+token+"&job="+job+"'|jq -r '.hash'").trim()  
+        def hash = sh(returnStdout: true, script: "curl -vvv 'https://upload.diawi.com/status?token="+token+"&job="+job+"'|jq -r '.hash'").trim()
         ipaUrl = 'https://i.diawi.com/' + hash
 
         sh ('echo ARTIFACT iOS: ' + ipaUrl)

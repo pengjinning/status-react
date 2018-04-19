@@ -75,13 +75,9 @@
 
 (defview message-content-command-request
   [{:keys [message-id content] :as message}]
-  (letsubs [command             [:get-command (:content-command-ref content)]
+  (letsubs [command             [:get-command (:request-command-ref content)]
             answered?           [:is-request-answered? message-id]
-            status-initialized? [:get :status-module-initialized?]]
-    {:component-will-mount #(when-not (:preview content)
-                              (dispatch [:request-command-message-data
-                                         message {:data-type   :preview
-                                                  :cache-data? true}]))}
+            status-initialized? [:get :status-module-initialized?]] 
     (let [{:keys        [prefill prefill-bot-db prefillBotDb params preview]
            text-content :text} content 
           command          (if (and params command)

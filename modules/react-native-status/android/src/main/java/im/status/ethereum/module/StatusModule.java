@@ -229,6 +229,16 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             } catch (Exception e) {
 
             }
+            try {
+                JSONObject whisperConfig = (JSONObject) jsonConfig.get("WhisperConfig");
+                if (whisperConfig == null) {
+                    whisperConfig = new JSONObject();
+                }
+                whisperConfig.put("LightClient", true);
+                jsonConfig.put("WhisperConfig", whisperConfig);
+            } catch (Exception e) {
+
+            }
             jsonConfig.put("KeyStoreDir", newKeystoreDir);
 
             config = jsonConfig.toString();
@@ -237,7 +247,16 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             Log.d(TAG, "Default configuration will be used");
         }
 
-        Log.d(TAG, "Node config " + config);
+        String configOutput = config;
+        final int maxOutputLen = 4000;
+        while (!configOutput.isEmpty()) {
+            Log.d(TAG, "Node config:" + configOutput.substring(0, Math.min(maxOutputLen, configOutput.length())));
+            if (configOutput.length() > maxOutputLen) {
+                configOutput = configOutput.substring(maxOutputLen);
+            } else {
+                break;
+            }
+        }
 
         String res = Statusgo.StartNode(config);
         if (res.startsWith("{\"error\":\"\"")) {
@@ -337,20 +356,20 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 doStartNode(config);
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
     public void stopNode() {
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 Log.d(TAG, "stopNode");
@@ -358,7 +377,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
@@ -371,7 +390,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
 
         jail.reset();
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 String result = Statusgo.Login(address, password);
@@ -380,7 +399,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
@@ -391,7 +410,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 String res = Statusgo.CreateAccount(password);
@@ -400,27 +419,27 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
-    public void notify(final String token, final Callback callback) {
-        Log.d(TAG, "notify");
+    public void notifyUsers(final String message, final String payloadJSON, final String tokensJSON, final Callback callback) {
+        Log.d(TAG, "notifyUsers");
         if (!checkAvailability()) {
             callback.invoke(false);
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
                 @Override
                 public void run() {
-                    String res = Statusgo.Notify(token);
+                    String res = Statusgo.NotifyUsers(message, payloadJSON, tokensJSON);
 
                     callback.invoke(res);
                 }
             };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
@@ -431,7 +450,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
                 @Override
                 public void run() {
                     String res = Statusgo.AddPeer(enode);
@@ -440,7 +459,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
                 }
             };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
 
@@ -451,7 +470,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             callback.invoke(false);
             return;
         }
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 String res = Statusgo.RecoverAccount(password, passphrase);
@@ -460,7 +479,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     private String createIdentifier() {
@@ -475,7 +494,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 String res = Statusgo.CompleteTransactions(hashes, password);
@@ -483,7 +502,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
 
@@ -494,14 +513,14 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 Statusgo.DiscardTransaction(id);
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     // Jail
@@ -514,7 +533,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             return;
         }
 
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 jail.initJail(js);
@@ -523,7 +542,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
@@ -665,7 +684,7 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
 
     @ReactMethod
     public void sendWeb3Request(final String payload, final Callback callback) {
-        Thread thread = new Thread() {
+        Runnable r = new Runnable() {
             @Override
             public void run() {
                 String res = Statusgo.CallRPC(payload);
@@ -673,11 +692,23 @@ class StatusModule extends ReactContextBaseJavaModule implements LifecycleEventL
             }
         };
 
-        thread.start();
+        StatusThreadPoolExecutor.getInstance().execute(r);
     }
 
     @ReactMethod
     public void closeApplication() {
         System.exit(0);
+    }
+
+    @ReactMethod
+    public void connectionChange(final String type, final boolean isExpensive) {
+        Log.d(TAG, "ConnectionChange: " + type + ", is expensive " + isExpensive);
+        Statusgo.ConnectionChange(type, isExpensive ? 1 : 0);
+    }
+
+    @ReactMethod
+    public void appStateChange(final String type) {
+        Log.d(TAG, "AppStateChange: " + type);
+        Statusgo.AppStateChange(type);
     }
 }

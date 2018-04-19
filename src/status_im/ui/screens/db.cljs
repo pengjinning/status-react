@@ -3,25 +3,19 @@
   (:require [cljs.spec.alpha :as spec]
             [status-im.constants :as constants]
             [status-im.utils.platform :as platform]
-            [status-im.utils.ethereum.core :as ethereum]
+            status-im.transport.db
             status-im.ui.screens.accounts.db
             status-im.ui.screens.contacts.db
             status-im.ui.screens.qr-scanner.db
             status-im.ui.screens.group.db
             status-im.chat.specs
-            status-im.chat.new-public-chat.db
             status-im.commands.specs
             status-im.ui.screens.profile.db
-            status-im.ui.screens.discover.db
             status-im.ui.screens.network-settings.db
             status-im.ui.screens.offline-messaging-settings.db
             status-im.ui.screens.browser.db
-            status-im.ui.screens.add-new.db))
-
-(def transaction-send-default
-  {:symbol    :ETH
-   :gas       ethereum/default-transaction-gas
-   :gas-price ethereum/default-gas-price})
+            status-im.ui.screens.add-new.db
+            status-im.ui.screens.add-new.new-public-chat.db))
 
 ;; initial state of app-db
 (def app-db {:current-public-key         nil
@@ -34,7 +28,7 @@
              :group/contact-groups       {}
              :group/selected-contacts    #{}
              :chats                      {}
-             :current-chat-id            constants/console-chat-id
+             :current-chat-id            nil
              :selected-participants      #{}
              :discoveries                {}
              :discover-search-tags       #{}
@@ -42,17 +36,16 @@
              :tags                       []
              :sync-state                 :done
              :wallet.transactions        constants/default-wallet-transactions
-             :wallet                     {:send-transaction transaction-send-default}
              :wallet-selected-asset      {}
              :prices                     {}
              :notifications              {}
              :network                    constants/default-network
              :networks/networks          constants/default-networks
-             :inbox/wnode                constants/default-wnode
              :inbox/wnodes               constants/default-wnodes
-             :inbox/topic                constants/inbox-topic
              :inbox/password             constants/inbox-password
-             :my-profile/editing?        false})
+             :my-profile/editing?        false
+             :transport/chats            {}
+             :desktop/desktop            {:tab-view-id :home}})
 
 ;;;;GLOBAL
 
@@ -67,14 +60,14 @@
 (spec/def ::webview-bridge (spec/nilable any?))
 (spec/def ::status-module-initialized? (spec/nilable boolean?))
 (spec/def ::status-node-started? (spec/nilable boolean?))
-(spec/def ::toolbar-search (spec/nilable map?))
 ;;height of native keyboard if shown
 (spec/def ::keyboard-height (spec/nilable number?))
 (spec/def ::keyboard-max-height (spec/nilable number?))
-;;:unknown - not used
-(spec/def ::orientation (spec/nilable keyword?))
 ;;:online - presence of internet connection in the phone
 (spec/def ::network-status (spec/nilable keyword?))
+
+(spec/def ::mailserver-status (spec/nilable keyword?))
+(spec/def ::peers-count (spec/nilable integer?))
 
 ;;;;NODE
 
@@ -92,6 +85,39 @@
 (spec/def :navigation/navigation-stack (spec/nilable seq?))
 (spec/def :navigation/prev-tab-view-id (spec/nilable keyword?))
 (spec/def :navigation/prev-view-id (spec/nilable keyword?))
+;; navigation screen params
+(spec/def :navigation.screen-params/network-details (allowed-keys :req [:networks/selected-network]))
+(spec/def :navigation.screen-params/browser (allowed-keys :req [:browser/browser-id]))
+(spec/def :navigation.screen-params.profile-qr-viewer/contact (spec/nilable map?))
+(spec/def :navigation.screen-params.profile-qr-viewer/source (spec/nilable keyword?))
+(spec/def :navigation.screen-params.profile-qr-viewer/value (spec/nilable string?))
+(spec/def :navigation.screen-params/profile-qr-viewer (allowed-keys :opt-un [:navigation.screen-params.profile-qr-viewer/contact
+                                                                             :navigation.screen-params.profile-qr-viewer/source
+                                                                             :navigation.screen-params.profile-qr-viewer/value]))
+(spec/def :navigation.screen-params.qr-scanner/current-qr-context (spec/nilable any?))
+(spec/def :navigation.screen-params/qr-scanner (allowed-keys :opt-un [:navigation.screen-params.qr-scanner/current-qr-context]))
+(spec/def :navigation.screen-params.group-contacts/show-search? (spec/nilable any?))
+(spec/def :navigation.screen-params/group-contacts (allowed-keys :opt [:group/contact-group-id]
+                                                                 :opt-un [:navigation.screen-params.group-contacts/show-search?]))
+(spec/def :navigation.screen-params.edit-contact-group/group (spec/nilable any?))
+(spec/def :navigation.screen-params.edit-contact-group/group-type (spec/nilable any?))
+(spec/def :navigation.screen-params/edit-contact-group (allowed-keys :opt-un [:navigation.screen-params.edit-contact-group/group
+                                                                              :navigation.screen-params.edit-contact-group/group-type]))
+(spec/def :navigation.screen-params.dapp-description/dapp :new/open-dapp)
+(spec/def :navigation.screen-params/dapp-description map?)
+
+(spec/def :navigation.screen-params/usage-data vector?)
+
+(spec/def :navigation/screen-params (spec/nilable (allowed-keys :opt-un [:navigation.screen-params/network-details
+                                                                         :navigation.screen-params/browser
+                                                                         :navigation.screen-params/profile-qr-viewer
+                                                                         :navigation.screen-params/qr-scanner
+                                                                         :navigation.screen-params/group-contacts
+                                                                         :navigation.screen-params/edit-contact-group
+                                                                         :navigation.screen-params/dapp-description
+                                                                         :navigation.screen-params/usage-data])))
+
+(spec/def :desktop/desktop (spec/nilable any?))
 
 ;;;;NETWORK
 
@@ -119,26 +145,30 @@
                   :group/selected-contacts
                   :group/groups-order
                   :accounts/accounts
-                  :accounts/account-creation?
-                  :accounts/creating-account?
+                  :accounts/create
                   :accounts/current-account-id
                   :accounts/recover
                   :accounts/login
-                  :my-profile/drawer
                   :my-profile/profile
                   :my-profile/default-name
                   :my-profile/editing?
+                  :my-profile/advanced?
+                  :my-profile/seed
+                  :group-chat-profile/profile
+                  :group-chat-profile/editing?
                   :networks/selected-network
                   :networks/networks
                   :node/after-start
                   :node/after-stop
-                  :inbox/wnode
                   :inbox/wnodes
-                  :inbox/topic
                   :inbox/password
                   :browser/browsers
                   :browser/options
-                  :new/open-dapp]
+                  :new/open-dapp
+                  :navigation/screen-params
+                  :transport/chats
+                  :transport/discovery-filter
+                  :desktop/desktop]
                  :opt-un
                  [::current-public-key
                   ::modal
@@ -148,11 +178,11 @@
                   ::webview-bridge
                   ::status-module-initialized?
                   ::status-node-started?
-                  ::toolbar-search
                   ::keyboard-height
                   ::keyboard-max-height
-                  ::orientation
                   ::network-status
+                  ::mailserver-status
+                  ::peers-count
                   ::sync-listening-started
                   ::sync-state
                   ::sync-data
@@ -180,6 +210,7 @@
                   :chat/selected-participants
                   :chat/chat-loaded-callbacks
                   :chat/public-group-topic
+                  :chat/public-group-topic-error
                   :chat/messages
                   :chat/not-loaded-message-ids
                   :chat/last-clock-value
